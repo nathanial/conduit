@@ -1,0 +1,15 @@
+{"version": "1.1.0",
+ "packagesDir": ".lake/packages",
+ "packages":
+ [{"url": "https://github.com/nathanial/crucible",
+   "type": "git",
+   "subDir": null,
+   "scope": "",
+   "rev": "92fc01faa9579c0bda63b23ed945b69dcecc879c",
+   "name": "crucible",
+   "manifestFile": "lake-manifest.json",
+   "inputRev": "v0.0.1",
+   "inherited": false,
+   "configFile": "lakefile.lean"}],
+ "name": "conduit",
+ "lakeDir": ".lake"}
