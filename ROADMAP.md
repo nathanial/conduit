@@ -29,26 +29,15 @@ This document tracks potential improvements, new features, and code cleanup oppo
 
 ---
 
-### [Priority: High] Unbuffered Channel trySend Implementation
+### [COMPLETED] Unbuffered Channel trySend Implementation
 
-**Description:** Currently, `trySend` on unbuffered channels always returns "would block" regardless of whether a receiver is waiting.
+**Status:** ✅ Implemented
 
-**Rationale:**
-- Current behavior (line 375-382 in conduit_ffi.c) is incomplete
-- Go's select on unbuffered channels works correctly
-- Limits usefulness of non-blocking operations on unbuffered channels
-
-**Affected Files:**
-- `/Users/Shared/Projects/lean-workspace/util/conduit/native/src/conduit_ffi.c` (lines 375-382)
-
-**Proposed Change:**
-- Track waiting receivers in the channel structure
-- Check for waiting receivers in `trySend`
-- Return success if a receiver is ready to take the value
-
-**Estimated Effort:** Medium
-
-**Dependencies:** None
+**Solution:**
+- Added `waiting_receivers` counter to channel structure
+- Receivers increment counter before `pthread_cond_wait`, decrement after
+- `trySend` checks `waiting_receivers > 0 && !pending_ready` to determine readiness
+- When ready, performs immediate handoff with waiting receiver
 
 ---
 
@@ -226,21 +215,14 @@ opaque stats (ch : Channel α) : IO ChannelStats
 
 ## Code Improvements
 
-### [Priority: High] Fix Select Send Case Readiness Check for Unbuffered Channels
+### [COMPLETED] Fix Select Send Case Readiness Check for Unbuffered Channels
 
-**Current State:** In `conduit_select_poll` (line 590-597), send case readiness for unbuffered channels is not properly implemented. The comment says "For unbuffered, we'd need to check for waiting receiver - skip for now".
+**Status:** ✅ Implemented
 
-**Proposed Change:**
-- Track waiting receivers in the channel structure
-- Check for waiting receivers when determining send readiness
-- This is needed for proper select behavior with unbuffered channels
-
-**Benefits:** Correct select semantics for unbuffered channels
-
-**Affected Files:**
-- `/Users/Shared/Projects/lean-workspace/util/conduit/native/src/conduit_ffi.c` (lines 590-597)
-
-**Estimated Effort:** Medium
+**Solution:**
+- Uses same `waiting_receivers` counter added for trySend fix
+- `select_poll` now checks `ch->capacity == 0 && ch->waiting_receivers > 0 && !ch->pending_ready`
+- Unbuffered send cases now correctly report readiness when receiver is waiting
 
 ---
 

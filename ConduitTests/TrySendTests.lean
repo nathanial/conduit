@@ -43,11 +43,24 @@ test "trySend on closed channel returns closed" := do
   let result ← ch.trySend 42
   result.isClosed ≡ true
 
-test "trySend on unbuffered returns closed" := do
+test "trySend on unbuffered with no receiver returns closed" := do
   -- Unbuffered channel with no receiver waiting returns "would block" (mapped to closed)
   let ch ← Channel.new Nat
   let result ← ch.trySend 42
   result.isClosed ≡ true
+
+test "trySend on unbuffered with waiting receiver succeeds" := do
+  let ch ← Channel.new Nat
+  -- Spawn receiver first - it will block waiting for data
+  let receiver ← IO.asTask (prio := .dedicated) ch.recv
+  -- Small delay to ensure receiver is blocked
+  IO.sleep 10
+  -- Now trySend should succeed because receiver is waiting
+  let result ← ch.trySend 42
+  result.isOk ≡ true
+  -- Verify receiver got the value
+  let v ← IO.wait receiver >>= IO.ofExcept
+  v ≡? 42
 
 test "trySend values are received in order" := do
   let ch ← Channel.newBuffered Nat 3

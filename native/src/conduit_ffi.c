@@ -31,6 +31,9 @@ typedef struct {
     bool pending_ready;           /* True if a sender is waiting */
     bool pending_taken;           /* True if receiver took the value */
 
+    /* Track waiting threads for unbuffered send readiness */
+    size_t waiting_receivers;     /* Receivers blocked waiting for data */
+
     bool closed;
 } conduit_channel_t;
 
@@ -138,6 +141,7 @@ LEAN_EXPORT lean_obj_res conduit_channel_new(lean_obj_arg world) {
     ch->pending_value = NULL;
     ch->pending_ready = false;
     ch->pending_taken = false;
+    ch->waiting_receivers = 0;
     ch->closed = false;
 
     return lean_io_result_mk_ok(conduit_channel_box(ch));
@@ -200,6 +204,7 @@ LEAN_EXPORT lean_obj_res conduit_channel_new_buffered(
     ch->pending_value = NULL;
     ch->pending_ready = false;
     ch->pending_taken = false;
+    ch->waiting_receivers = 0;
     ch->closed = false;
 
     return lean_io_result_mk_ok(conduit_channel_box(ch));
@@ -298,7 +303,9 @@ LEAN_EXPORT lean_obj_res conduit_channel_recv(
     if (ch->capacity == 0) {
         /* Unbuffered channel: wait for sender */
         while (!ch->pending_ready && !ch->closed) {
+            ch->waiting_receivers++;
             pthread_cond_wait(&ch->not_empty, &ch->mutex);
+            ch->waiting_receivers--;
         }
 
         if (ch->pending_ready && !ch->pending_taken) {
@@ -374,9 +381,31 @@ LEAN_EXPORT lean_obj_res conduit_channel_try_send(
     }
 
     if (ch->capacity == 0) {
-        /* Unbuffered: can only send if receiver is waiting */
-        /* For simplicity, unbuffered trySend always returns "would block"
-           unless we add a waiting receiver queue */
+        /* Unbuffered: can send if receiver is waiting and no sender in progress */
+        if (ch->waiting_receivers > 0 && !ch->pending_ready) {
+            /* Perform the handoff */
+            ch->pending_value = value;
+            ch->pending_ready = true;
+            ch->pending_taken = false;
+
+            /* Wake one waiting receiver */
+            pthread_cond_signal(&ch->not_empty);
+
+            /* Wait for receiver to take it (they should be immediate) */
+            while (!ch->pending_taken && !ch->closed) {
+                pthread_cond_wait(&ch->not_full, &ch->mutex);
+            }
+
+            bool success = ch->pending_taken;
+            ch->pending_value = NULL;
+            ch->pending_ready = false;
+            ch->pending_taken = false;
+
+            pthread_mutex_unlock(&ch->mutex);
+            if (!success) lean_dec(value);
+            return lean_io_result_mk_ok(lean_box(success ? 0 : 2)); /* ok or closed */
+        }
+        /* No receiver waiting - would block */
         pthread_mutex_unlock(&ch->mutex);
         lean_dec(value);
         return lean_io_result_mk_ok(lean_box(1)); /* would block */
@@ -594,8 +623,10 @@ LEAN_EXPORT lean_obj_res conduit_select_poll(
             if (!ch->closed) {
                 if (ch->capacity > 0 && ch->count < ch->capacity) {
                     ready = true;
+                } else if (ch->capacity == 0 && ch->waiting_receivers > 0 && !ch->pending_ready) {
+                    /* Unbuffered with waiting receiver and no send in progress */
+                    ready = true;
                 }
-                /* For unbuffered, we'd need to check for waiting receiver - skip for now */
             }
         } else {
             /* Can recv if: has data OR (unbuffered with pending and not yet taken) OR closed */

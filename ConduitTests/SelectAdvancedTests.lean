@@ -53,6 +53,26 @@ test "poll prefers first ready case" := do
     sendCase ch2 2
   result ≡? 0
 
+test "poll with sendCase on unbuffered with no receiver returns none" := do
+  let ch ← Channel.new Nat
+  let result ← selectPoll do
+    sendCase ch 42
+  shouldBeNone result
+
+test "poll with sendCase on unbuffered with waiting receiver returns ready" := do
+  let ch ← Channel.new Nat
+  -- Spawn receiver first - it will block waiting for data
+  let receiver ← IO.asTask (prio := .dedicated) ch.recv
+  -- Small delay to ensure receiver is blocked
+  IO.sleep 10
+  -- Now poll should detect the channel is ready for send
+  let result ← selectPoll do
+    sendCase ch 42
+  result ≡? 0
+  -- Clean up: close channel so receiver wakes up
+  ch.close
+  let _ ← IO.wait receiver
+
 testSuite "selectTimeout"
 
 test "selectTimeout returns none when timeout expires" := do
