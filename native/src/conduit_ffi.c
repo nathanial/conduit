@@ -532,6 +532,216 @@ LEAN_EXPORT lean_obj_res conduit_channel_try_recv(
 }
 
 /* ============================================================================
+ * conduit_channel_send_timeout : Channel α → α → Nat → IO UInt8
+ *
+ * Blocking send with timeout. Returns 0=ok, 1=timeout, 2=closed.
+ * ============================================================================ */
+
+LEAN_EXPORT lean_obj_res conduit_channel_send_timeout(
+    b_lean_obj_arg ch_obj,
+    lean_obj_arg value,
+    size_t timeout_ms,
+    lean_obj_arg world
+) {
+    (void)world;
+    conduit_channel_t *ch = conduit_channel_unbox(ch_obj);
+
+    pthread_mutex_lock(&ch->mutex);
+
+    /* Check if closed */
+    if (ch->closed) {
+        pthread_mutex_unlock(&ch->mutex);
+        lean_dec(value);
+        return lean_io_result_mk_ok(lean_box(2)); /* closed */
+    }
+
+    /* Calculate deadline */
+    struct timespec deadline;
+    clock_gettime(CLOCK_REALTIME, &deadline);
+    deadline.tv_sec += timeout_ms / 1000;
+    deadline.tv_nsec += (timeout_ms % 1000) * 1000000;
+    if (deadline.tv_nsec >= 1000000000) {
+        deadline.tv_sec++;
+        deadline.tv_nsec -= 1000000000;
+    }
+
+    if (ch->capacity == 0) {
+        /* Unbuffered channel: wait for receiver with timeout */
+        ch->pending_value = value;
+        ch->pending_ready = true;
+        ch->pending_taken = false;
+
+        /* Signal that a value is available */
+        pthread_cond_signal(&ch->not_empty);
+        select_notify_waiters(ch);
+
+        /* Wait for receiver to take it or channel to close or timeout */
+        while (!ch->pending_taken && !ch->closed) {
+            int rc = pthread_cond_timedwait(&ch->not_full, &ch->mutex, &deadline);
+            if (rc == ETIMEDOUT) {
+                /* Timeout - clean up pending state */
+                ch->pending_value = NULL;
+                ch->pending_ready = false;
+                ch->pending_taken = false;
+                pthread_mutex_unlock(&ch->mutex);
+                lean_dec(value);
+                return lean_io_result_mk_ok(lean_box(1)); /* timeout */
+            }
+        }
+
+        bool success = ch->pending_taken;
+        ch->pending_value = NULL;
+        ch->pending_ready = false;
+        ch->pending_taken = false;
+
+        pthread_mutex_unlock(&ch->mutex);
+
+        if (!success) {
+            /* Channel closed before receiver took value */
+            lean_dec(value);
+            return lean_io_result_mk_ok(lean_box(2)); /* closed */
+        }
+
+        return lean_io_result_mk_ok(lean_box(0)); /* ok */
+    } else {
+        /* Buffered channel: wait for space with timeout */
+        while (ch->count >= ch->capacity && !ch->closed) {
+            int rc = pthread_cond_timedwait(&ch->not_full, &ch->mutex, &deadline);
+            if (rc == ETIMEDOUT) {
+                pthread_mutex_unlock(&ch->mutex);
+                lean_dec(value);
+                return lean_io_result_mk_ok(lean_box(1)); /* timeout */
+            }
+        }
+
+        if (ch->closed) {
+            pthread_mutex_unlock(&ch->mutex);
+            lean_dec(value);
+            return lean_io_result_mk_ok(lean_box(2)); /* closed */
+        }
+
+        /* Add to buffer */
+        ch->buffer[ch->tail] = value;
+        ch->tail = (ch->tail + 1) % ch->capacity;
+        ch->count++;
+
+        /* Signal that data is available */
+        pthread_cond_signal(&ch->not_empty);
+        select_notify_waiters(ch);
+
+        pthread_mutex_unlock(&ch->mutex);
+        return lean_io_result_mk_ok(lean_box(0)); /* ok */
+    }
+}
+
+/* ============================================================================
+ * conduit_channel_recv_timeout : Channel α → Nat → IO (Option (Option α))
+ *
+ * Blocking receive with timeout.
+ * Returns: none = timeout, some none = closed, some (some v) = value
+ * ============================================================================ */
+
+LEAN_EXPORT lean_obj_res conduit_channel_recv_timeout(
+    b_lean_obj_arg ch_obj,
+    size_t timeout_ms,
+    lean_obj_arg world
+) {
+    (void)world;
+    conduit_channel_t *ch = conduit_channel_unbox(ch_obj);
+
+    pthread_mutex_lock(&ch->mutex);
+
+    /* Calculate deadline */
+    struct timespec deadline;
+    clock_gettime(CLOCK_REALTIME, &deadline);
+    deadline.tv_sec += timeout_ms / 1000;
+    deadline.tv_nsec += (timeout_ms % 1000) * 1000000;
+    if (deadline.tv_nsec >= 1000000000) {
+        deadline.tv_sec++;
+        deadline.tv_nsec -= 1000000000;
+    }
+
+    if (ch->capacity == 0) {
+        /* Unbuffered channel: wait for sender with timeout */
+        while (!ch->pending_ready && !ch->closed) {
+            ch->waiting_receivers++;
+            int rc = pthread_cond_timedwait(&ch->not_empty, &ch->mutex, &deadline);
+            ch->waiting_receivers--;
+            if (rc == ETIMEDOUT) {
+                pthread_mutex_unlock(&ch->mutex);
+                /* Return none (timeout) */
+                return lean_io_result_mk_ok(lean_box(0));
+            }
+        }
+
+        if (ch->pending_ready && !ch->pending_taken) {
+            /* Take the value from sender */
+            lean_object *value = ch->pending_value;
+            ch->pending_taken = true;
+            ch->pending_ready = false;
+
+            /* Signal sender that we took it */
+            pthread_cond_signal(&ch->not_full);
+            select_notify_waiters(ch);
+
+            pthread_mutex_unlock(&ch->mutex);
+
+            /* Return some (some value) */
+            lean_object *inner = lean_alloc_ctor(1, 1, 0);
+            lean_ctor_set(inner, 0, value);
+            lean_object *outer = lean_alloc_ctor(1, 1, 0);
+            lean_ctor_set(outer, 0, inner);
+            return lean_io_result_mk_ok(outer);
+        }
+
+        /* Channel closed, no pending value */
+        pthread_mutex_unlock(&ch->mutex);
+        /* Return some none (closed) */
+        lean_object *outer = lean_alloc_ctor(1, 1, 0);
+        lean_ctor_set(outer, 0, lean_box(0));
+        return lean_io_result_mk_ok(outer);
+    } else {
+        /* Buffered channel: wait for data with timeout */
+        while (ch->count == 0 && !ch->closed) {
+            int rc = pthread_cond_timedwait(&ch->not_empty, &ch->mutex, &deadline);
+            if (rc == ETIMEDOUT) {
+                pthread_mutex_unlock(&ch->mutex);
+                /* Return none (timeout) */
+                return lean_io_result_mk_ok(lean_box(0));
+            }
+        }
+
+        if (ch->count == 0) {
+            /* Channel closed and empty */
+            pthread_mutex_unlock(&ch->mutex);
+            /* Return some none (closed) */
+            lean_object *outer = lean_alloc_ctor(1, 1, 0);
+            lean_ctor_set(outer, 0, lean_box(0));
+            return lean_io_result_mk_ok(outer);
+        }
+
+        /* Take from buffer */
+        lean_object *value = ch->buffer[ch->head];
+        ch->buffer[ch->head] = NULL;
+        ch->head = (ch->head + 1) % ch->capacity;
+        ch->count--;
+
+        /* Signal that space is available */
+        pthread_cond_signal(&ch->not_full);
+        select_notify_waiters(ch);
+
+        pthread_mutex_unlock(&ch->mutex);
+
+        /* Return some (some value) */
+        lean_object *inner = lean_alloc_ctor(1, 1, 0);
+        lean_ctor_set(inner, 0, value);
+        lean_object *outer = lean_alloc_ctor(1, 1, 0);
+        lean_ctor_set(outer, 0, inner);
+        return lean_io_result_mk_ok(outer);
+    }
+}
+
+/* ============================================================================
  * conduit_channel_close : Channel α → IO Unit
  *
  * Close the channel. Wakes all waiting senders/receivers.

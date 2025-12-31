@@ -77,6 +77,44 @@ test "forEach on empty closed channel does nothing" := do
   let c ← count.get
   c ≡ 0
 
+testSuite "ForIn"
+
+test "ForIn iterates until channel closed" := do
+  let ch ← Channel.fromArray #[1, 2, 3]
+  let mut sum := 0
+  for v in ch do
+    sum := sum + v
+  sum ≡ 6
+
+test "ForIn supports early exit with break" := do
+  let ch ← Channel.fromArray #[1, 2, 3, 4, 5]
+  let mut sum := 0
+  for v in ch do
+    sum := sum + v
+    if sum >= 6 then break  -- 1+2+3=6, should exit here
+  sum ≡ 6
+
+test "ForIn collects into array" := do
+  let ch ← Channel.fromArray #[10, 20, 30]
+  let mut arr : Array Nat := #[]
+  for v in ch do
+    arr := arr.push v
+  arr ≡ #[10, 20, 30]
+
+test "ForIn on empty channel does nothing" := do
+  let ch ← Channel.empty Nat
+  let mut count := 0
+  for _ in ch do
+    count := count + 1
+  count ≡ 0
+
+test "ForIn accumulator works correctly" := do
+  let ch ← Channel.fromArray #["a", "b", "c"]
+  let mut result := ""
+  for s in ch do
+    result := result ++ s
+  result ≡ "abc"
+
 testSuite "drain"
 
 test "drain collects all values into array" := do

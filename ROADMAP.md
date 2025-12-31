@@ -37,28 +37,15 @@ This document tracks potential improvements, new features, and code cleanup oppo
 
 ---
 
-### [Priority: Medium] Timeout Variants for Blocking Operations
+### [COMPLETED] Timeout Variants for Blocking Operations
 
-**Description:** Add timeout versions of `send` and `recv` operations.
+**Status:** ✅ Implemented
 
-**Rationale:**
-- Prevents indefinite blocking
-- Essential for robust concurrent programming
-- Matches Go's `select` with timeout pattern
-
-**Affected Files:**
-- `/Users/Shared/Projects/lean-workspace/util/conduit/Conduit/Channel.lean`
-- `/Users/Shared/Projects/lean-workspace/util/conduit/native/src/conduit_ffi.c`
-
-**Proposed API:**
-```lean
-opaque sendTimeout (ch : Channel α) (value : α) (timeoutMs : Nat) : IO (Option Bool)
-opaque recvTimeout (ch : Channel α) (timeoutMs : Nat) : IO (Option (Option α))
-```
-
-**Estimated Effort:** Medium
-
-**Dependencies:** None
+**Solution:**
+- Added `conduit_channel_send_timeout` and `conduit_channel_recv_timeout` FFI functions
+- Uses `pthread_cond_timedwait` for proper timeout handling
+- `sendTimeout` returns `Option Bool`: some true = ok, some false = closed, none = timeout
+- `recvTimeout` returns `Option (Option α)`: some (some v) = value, some none = closed, none = timeout
 
 ---
 
@@ -81,27 +68,15 @@ opaque recvTimeout (ch : Channel α) (timeoutMs : Nat) : IO (Option (Option α))
 
 ---
 
-### [Priority: Medium] Channel Range/Iterator Protocol
+### [COMPLETED] Channel Range/Iterator Protocol
 
-**Description:** Add Lean 4 `ForIn` instance for channels to enable `for` loop iteration.
+**Status:** ✅ Implemented
 
-**Rationale:**
-- More idiomatic Lean code
-- Cleaner than explicit `forEach` calls
-- Matches Go's `range` over channels
-
-**Affected Files:**
-- `/Users/Shared/Projects/lean-workspace/util/conduit/Conduit/Channel/Combinators.lean`
-
-**Proposed API:**
-```lean
-instance : ForIn IO (Channel α) α where
-  forIn ch init f := ...
-```
-
-**Estimated Effort:** Small
-
-**Dependencies:** None
+**Solution:**
+- Added `ForIn IO (Channel α) α` instance in Combinators.lean
+- Enables `for v in ch do ...` syntax
+- Supports early exit with `break`
+- Uses partial helper function `forInLoop` for recursion
 
 ---
 
@@ -222,50 +197,24 @@ opaque stats (ch : Channel α) : IO ChannelStats
 
 ---
 
-### [Priority: Medium] Add TrySendResult Type for Better trySend Semantics
+### [COMPLETED] Add TrySendResult Type for Better trySend Semantics
 
-**Current State:** The `trySend` function returns `SendResult` which only has `ok` and `closed`, but the FFI returns three states: ok (0), would_block (1), and closed (2). The current Lean code conflates would_block with closed.
+**Status:** ✅ Implemented
 
-**Proposed Change:**
-```lean
-inductive TrySendResult where
-  | ok       -- Successfully sent
-  | full     -- Buffer full, would block
-  | closed   -- Channel is closed
-```
-
-**Benefits:**
-- Accurate representation of non-blocking send results
-- Allows caller to distinguish between full buffer and closed channel
-- Matches the FFI behavior
-
-**Affected Files:**
-- `/Users/Shared/Projects/lean-workspace/util/conduit/Conduit/Core/Types.lean`
-- `/Users/Shared/Projects/lean-workspace/util/conduit/Conduit/Channel.lean` (lines 38-43)
-
-**Estimated Effort:** Small
+**Solution:**
+- Added `TrySendResult` type with `ok`, `full`, and `closed` variants
+- Updated `trySend` to return `TrySendResult` instead of `SendResult`
+- Now correctly distinguishes between full buffer and closed channel
 
 ---
 
-### [Priority: Medium] Use pthread_cond_timedwait for Select Timeout
+### [COMPLETED] Use pthread_cond_timedwait for Select Timeout
 
-**Current State:** The select wait with timeout uses a sleep-poll loop (lines 672-678 in conduit_ffi.c).
+**Status:** ✅ Implemented (part of Proper Select Wait Implementation)
 
-**Proposed Change:**
-- Use `pthread_cond_timedwait` for more efficient waiting
-- This requires the proper select implementation mentioned above
-
-**Benefits:**
-- More CPU-efficient waiting
-- Lower latency responses
-- Standard pthread pattern
-
-**Affected Files:**
-- `/Users/Shared/Projects/lean-workspace/util/conduit/native/src/conduit_ffi.c` (lines 629-683)
-
-**Estimated Effort:** Medium
-
-**Dependencies:** Proper Select Wait Implementation
+**Solution:**
+- Select wait now uses proper condition variable signaling with `pthread_cond_timedwait`
+- Immediate wake-up on channel state changes, no polling
 
 ---
 
@@ -501,14 +450,23 @@ The FFI uses POSIX pthreads. For Windows support:
 
 ## Summary
 
-| Category | High Priority | Medium Priority | Low Priority |
-|----------|---------------|-----------------|--------------|
-| Features | 2 | 4 | 4 |
-| Improvements | 1 | 4 | 2 |
+| Category | Completed | Medium Priority | Low Priority |
+|----------|-----------|-----------------|--------------|
+| Features | 4 | 2 | 4 |
+| Improvements | 3 | 2 | 2 |
 | Cleanup | 0 | 3 | 4 |
 
+**Completed Features:**
+- ✅ Proper Select Wait with Condition Variables
+- ✅ Unbuffered Channel trySend
+- ✅ Fix Select Send Readiness for Unbuffered Channels
+- ✅ TrySendResult Type (distinguishes full vs closed)
+- ✅ Timeout Variants (sendTimeout, recvTimeout)
+- ✅ Channel ForIn Instance
+- ✅ pthread_cond_timedwait for Select
+
 **Recommended Next Steps:**
-1. Fix the select send case readiness for unbuffered channels
-2. Implement proper condition variable-based select wait
-3. Add `TrySendResult` type for accurate non-blocking send semantics
+1. Add Functor/Monad instances for TryResult
+2. Make combinators use buffered output channels
+3. Add Broadcast Channels for pub/sub scenarios
 4. Expand test coverage for concurrency scenarios

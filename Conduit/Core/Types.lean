@@ -34,6 +34,29 @@ def isClosed : SendResult → Bool
 
 end SendResult
 
+/-- Result of a non-blocking send operation -/
+inductive TrySendResult where
+  | ok       -- Successfully sent
+  | full     -- Buffer full / no waiting receiver (would block)
+  | closed   -- Channel is closed
+  deriving Repr, BEq, Inhabited
+
+namespace TrySendResult
+
+def isOk : TrySendResult → Bool
+  | .ok => true
+  | _ => false
+
+def isFull : TrySendResult → Bool
+  | .full => true
+  | _ => false
+
+def isClosed : TrySendResult → Bool
+  | .closed => true
+  | _ => false
+
+end TrySendResult
+
 namespace TryResult
 
 def isOk {α : Type} : TryResult α → Bool

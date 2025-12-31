@@ -32,6 +32,21 @@ partial def forEach (ch : Channel α) (f : α → IO Unit) : IO Unit := do
     forEach ch f
   | none => pure ()
 
+/-- Helper for ForIn instance - loops until channel closed or early exit. -/
+private partial def forInLoop {α β : Type} (ch : Channel α)
+    (f : α → β → IO (ForInStep β)) (acc : β) : IO β := do
+  match ← ch.recv with
+  | some v =>
+    match ← f v acc with
+    | .done acc' => pure acc'
+    | .yield acc' => forInLoop ch f acc'
+  | none => pure acc
+
+/-- ForIn instance enabling `for v in ch do ...` syntax.
+    Iterates until channel is closed or early exit (break). -/
+instance : ForIn IO (Channel α) α where
+  forIn ch init f := forInLoop ch f init
+
 /-- Collect all remaining values from a channel into an array.
     Blocks until the channel is closed. -/
 partial def drain (ch : Channel α) : IO (Array α) := do

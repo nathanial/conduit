@@ -28,14 +28,13 @@ test "trySend multiple values with space" := do
   r2.isOk ≡ true
   r3.isOk ≡ true
 
-test "trySend on full buffered returns closed" := do
-  -- Note: trySend returns .closed for both "would block" and "actually closed"
+test "trySend on full buffered returns full" := do
   let ch ← Channel.newBuffered Nat 2
   let _ ← ch.trySend 1
   let _ ← ch.trySend 2
   -- Buffer is now full
   let result ← ch.trySend 3
-  result.isClosed ≡ true
+  result.isFull ≡ true
 
 test "trySend on closed channel returns closed" := do
   let ch ← Channel.newBuffered Nat 3
@@ -43,11 +42,11 @@ test "trySend on closed channel returns closed" := do
   let result ← ch.trySend 42
   result.isClosed ≡ true
 
-test "trySend on unbuffered with no receiver returns closed" := do
-  -- Unbuffered channel with no receiver waiting returns "would block" (mapped to closed)
+test "trySend on unbuffered with no receiver returns full" := do
+  -- Unbuffered channel with no receiver waiting returns "would block" (full)
   let ch ← Channel.new Nat
   let result ← ch.trySend 42
-  result.isClosed ≡ true
+  result.isFull ≡ true
 
 test "trySend on unbuffered with waiting receiver succeeds" := do
   let ch ← Channel.new Nat
@@ -80,7 +79,7 @@ test "trySend after partial drain succeeds" := do
   let _ ← ch.trySend 2
   -- Full, trySend would fail
   let r1 ← ch.trySend 3
-  r1.isClosed ≡ true
+  r1.isFull ≡ true
   -- Drain one
   let _ ← ch.recv
   -- Now trySend should succeed

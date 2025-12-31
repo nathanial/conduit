@@ -12,6 +12,7 @@ import ConduitTests.TypeTests
 import ConduitTests.TrySendTests
 import ConduitTests.SelectAdvancedTests
 import ConduitTests.ConcurrencyTests
+import ConduitTests.TimeoutTests
 
 open Crucible
 
