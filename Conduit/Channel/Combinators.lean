@@ -59,11 +59,14 @@ def fromList (lst : List α) : IO (Channel α) := do
   ch.close
   pure ch
 
+/-- Default buffer size for combinator output channels. -/
+private def defaultBufferSize : Nat := 16
+
 /-- Map a function over values received from a channel, sending results to a new channel.
     Spawns a background task to perform the mapping.
     The output channel is closed when the input channel is exhausted. -/
-def map (ch : Channel α) (f : α → β) : IO (Channel β) := do
-  let out ← Channel.new β
+def map (ch : Channel α) (f : α → β) (bufferSize : Nat := defaultBufferSize) : IO (Channel β) := do
+  let out ← Channel.newBuffered β bufferSize
   let _ ← IO.asTask (prio := .dedicated) do
     ch.forEach fun v => do
       let _ ← out.send (f v)
@@ -73,8 +76,8 @@ def map (ch : Channel α) (f : α → β) : IO (Channel β) := do
 /-- Filter values from a channel based on a predicate.
     Spawns a background task to perform the filtering.
     The output channel is closed when the input channel is exhausted. -/
-def filter (ch : Channel α) (p : α → Bool) : IO (Channel α) := do
-  let out ← Channel.new α
+def filter (ch : Channel α) (p : α → Bool) (bufferSize : Nat := defaultBufferSize) : IO (Channel α) := do
+  let out ← Channel.newBuffered α bufferSize
   let _ ← IO.asTask (prio := .dedicated) do
     ch.forEach fun v => do
       if p v then
@@ -86,9 +89,13 @@ def filter (ch : Channel α) (p : α → Bool) : IO (Channel α) := do
     Values are received from all channels and sent to the output.
     Spawns a task for each input channel.
     The output channel is closed when all input channels are exhausted. -/
-def merge (channels : Array (Channel α)) : IO (Channel α) := do
-  let out ← Channel.new α
+def merge (channels : Array (Channel α)) (bufferSize : Nat := defaultBufferSize) : IO (Channel α) := do
+  let out ← Channel.newBuffered α bufferSize
   let remaining ← IO.mkRef channels.size
+
+  if channels.isEmpty then
+    out.close
+    return out
 
   for ch in channels do
     let _ ← IO.asTask (prio := .dedicated) do

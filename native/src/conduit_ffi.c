@@ -301,10 +301,11 @@ LEAN_EXPORT lean_obj_res conduit_channel_recv(
             pthread_cond_wait(&ch->not_empty, &ch->mutex);
         }
 
-        if (ch->pending_ready) {
+        if (ch->pending_ready && !ch->pending_taken) {
             /* Take the value from sender */
             lean_object *value = ch->pending_value;
             ch->pending_taken = true;
+            ch->pending_ready = false;  /* Clear to prevent duplicate reads */
 
             /* Signal sender that we took it */
             pthread_cond_signal(&ch->not_full);
@@ -418,9 +419,10 @@ LEAN_EXPORT lean_obj_res conduit_channel_try_recv(
 
     if (ch->capacity == 0) {
         /* Unbuffered: check if sender is waiting */
-        if (ch->pending_ready) {
+        if (ch->pending_ready && !ch->pending_taken) {
             lean_object *value = ch->pending_value;
             ch->pending_taken = true;
+            ch->pending_ready = false;  /* Clear to prevent duplicate reads */
             pthread_cond_signal(&ch->not_full);
             pthread_mutex_unlock(&ch->mutex);
 
@@ -596,8 +598,8 @@ LEAN_EXPORT lean_obj_res conduit_select_poll(
                 /* For unbuffered, we'd need to check for waiting receiver - skip for now */
             }
         } else {
-            /* Can recv if: has data OR (unbuffered with pending) OR closed */
-            if (ch->count > 0 || ch->pending_ready || ch->closed) {
+            /* Can recv if: has data OR (unbuffered with pending and not yet taken) OR closed */
+            if (ch->count > 0 || (ch->pending_ready && !ch->pending_taken) || ch->closed) {
                 ready = true;
             }
         }
