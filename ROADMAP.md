@@ -6,26 +6,22 @@ This document tracks potential improvements, new features, and code cleanup oppo
 
 ## Feature Proposals
 
-### [Priority: High] Proper Select Wait Implementation with Condition Variables
+### [COMPLETED] Proper Select Wait Implementation with Condition Variables
 
-**Description:** Replace the current polling-based select wait with proper condition variable signaling. The current implementation in `conduit_select_wait` polls at 1ms intervals, which is inefficient and introduces latency.
+**Status:** ✅ Implemented
 
-**Rationale:**
-- Current polling wastes CPU cycles
-- 1ms minimum latency is unacceptable for low-latency applications
-- Go's select uses proper waiting on channel condition variables
+**Solution:**
+- Added `select_waiters` linked list to channel structure
+- Each select waiter has its own condition variable and mutex
+- Channels notify all registered waiters on state changes (send/recv/close)
+- `select_wait` registers waiter on all channels, waits on condition, then unregisters
+- Channels locked in address order to prevent deadlock
+- Uses `pthread_cond_timedwait` for timeout support
 
-**Affected Files:**
-- `/Users/Shared/Projects/lean-workspace/util/conduit/native/src/conduit_ffi.c` (lines 619-683)
-
-**Proposed Change:**
-- Create a shared condition variable for select operations
-- Have channels signal this condition when they become ready
-- Register select waiters on each channel being monitored
-
-**Estimated Effort:** Large
-
-**Dependencies:** None
+**Benefits:**
+- Zero polling overhead - sleeps until channel ready
+- Immediate wake-up when any channel becomes ready
+- Proper timeout handling with `pthread_cond_timedwait`
 
 ---
 

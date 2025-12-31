@@ -138,6 +138,66 @@ test "Builder.size counts mixed cases" := do
     |>.addRecv ch1
   b.size ≡ 3
 
+testSuite "selectWait Immediate Wake-up"
+
+test "selectTimeout wakes immediately when channel becomes ready" := do
+  let ch ← Channel.newBuffered Nat 1
+  let start ← IO.monoMsNow
+  -- Spawn task that sends after 50ms
+  let _ ← IO.asTask (prio := .dedicated) do
+    IO.sleep 50
+    let _ ← ch.send 42
+    pure ()
+  -- selectTimeout should wake at ~50ms, not poll at 1ms intervals
+  let result ← selectTimeout (recvCase ch) 5000
+  let elapsed ← IO.monoMsNow
+  result ≡? 0
+  -- Should complete in ~50-150ms (allowing for scheduling jitter)
+  if elapsed - start < 40 then
+    throw (IO.userError s!"Too fast: {elapsed - start}ms")
+  if elapsed - start >= 300 then
+    throw (IO.userError s!"Too slow: {elapsed - start}ms")
+
+test "selectTimeout with multiple channels wakes on first ready" := do
+  let ch1 ← Channel.newBuffered Nat 1
+  let ch2 ← Channel.newBuffered Nat 1
+  let start ← IO.monoMsNow
+  let _ ← IO.asTask (prio := .dedicated) do
+    IO.sleep 30
+    let _ ← ch2.send 99
+    pure ()
+  let result ← selectTimeout (do recvCase ch1; recvCase ch2) 5000
+  let elapsed ← IO.monoMsNow
+  result ≡? 1  -- ch2 was ready first
+  -- Should complete in ~30-150ms
+  if elapsed - start < 20 then
+    throw (IO.userError s!"Too fast: {elapsed - start}ms")
+  if elapsed - start >= 300 then
+    throw (IO.userError s!"Too slow: {elapsed - start}ms")
+
+test "selectTimeout returns immediately if already ready" := do
+  let ch ← Channel.newBuffered Nat 1
+  let _ ← ch.send 42
+  let start ← IO.monoMsNow
+  let result ← selectTimeout (recvCase ch) 5000
+  let elapsed ← IO.monoMsNow
+  result ≡? 0
+  -- Should complete almost instantly (< 50ms)
+  if elapsed - start >= 50 then
+    throw (IO.userError s!"Too slow: {elapsed - start}ms")
+
+test "selectTimeout respects timeout" := do
+  let ch ← Channel.newBuffered Nat 1
+  let start ← IO.monoMsNow
+  let result ← selectTimeout (recvCase ch) 100  -- 100ms timeout
+  let elapsed ← IO.monoMsNow
+  shouldBeNone result
+  -- Should timeout around 100ms (within 50-200ms range)
+  if elapsed - start < 80 then
+    throw (IO.userError s!"Timeout too fast: {elapsed - start}ms")
+  if elapsed - start >= 300 then
+    throw (IO.userError s!"Timeout too slow: {elapsed - start}ms")
+
 #generate_tests
 
 end ConduitTests.SelectAdvancedTests

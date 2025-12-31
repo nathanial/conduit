@@ -9,6 +9,19 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <time.h>
+#include <errno.h>
+
+/* ============================================================================
+ * Select Waiter Structure (forward declaration)
+ * ============================================================================ */
+
+typedef struct conduit_select_waiter {
+    pthread_cond_t *cond;         /* Waiter's condition variable */
+    pthread_mutex_t *mutex;       /* Points to waiter's mutex */
+    volatile bool notified;       /* Set true when any channel signals */
+    struct conduit_select_waiter *next;  /* Linked list for channel's waiter list */
+} conduit_select_waiter_t;
 
 /* ============================================================================
  * Channel Structure
@@ -34,8 +47,16 @@ typedef struct {
     /* Track waiting threads for unbuffered send readiness */
     size_t waiting_receivers;     /* Receivers blocked waiting for data */
 
+    /* Select waiter list (protected by channel mutex) */
+    conduit_select_waiter_t *select_waiters;  /* Head of linked list */
+
     bool closed;
 } conduit_channel_t;
+
+/* Forward declarations for select waiter helpers */
+static void select_register_waiter(conduit_channel_t *ch, conduit_select_waiter_t *w);
+static void select_unregister_waiter(conduit_channel_t *ch, conduit_select_waiter_t *w);
+static void select_notify_waiters(conduit_channel_t *ch);
 
 /* ============================================================================
  * External Class Registration
@@ -142,6 +163,7 @@ LEAN_EXPORT lean_obj_res conduit_channel_new(lean_obj_arg world) {
     ch->pending_ready = false;
     ch->pending_taken = false;
     ch->waiting_receivers = 0;
+    ch->select_waiters = NULL;
     ch->closed = false;
 
     return lean_io_result_mk_ok(conduit_channel_box(ch));
@@ -205,6 +227,7 @@ LEAN_EXPORT lean_obj_res conduit_channel_new_buffered(
     ch->pending_ready = false;
     ch->pending_taken = false;
     ch->waiting_receivers = 0;
+    ch->select_waiters = NULL;
     ch->closed = false;
 
     return lean_io_result_mk_ok(conduit_channel_box(ch));
@@ -241,6 +264,7 @@ LEAN_EXPORT lean_obj_res conduit_channel_send(
 
         /* Signal that a value is available */
         pthread_cond_signal(&ch->not_empty);
+        select_notify_waiters(ch);
 
         /* Wait for receiver to take it or channel to close */
         while (!ch->pending_taken && !ch->closed) {
@@ -279,6 +303,7 @@ LEAN_EXPORT lean_obj_res conduit_channel_send(
 
         /* Signal that data is available */
         pthread_cond_signal(&ch->not_empty);
+        select_notify_waiters(ch);
 
         pthread_mutex_unlock(&ch->mutex);
         return lean_io_result_mk_ok(lean_box(1)); /* true */
@@ -316,6 +341,7 @@ LEAN_EXPORT lean_obj_res conduit_channel_recv(
 
             /* Signal sender that we took it */
             pthread_cond_signal(&ch->not_full);
+            select_notify_waiters(ch);
 
             pthread_mutex_unlock(&ch->mutex);
 
@@ -348,6 +374,7 @@ LEAN_EXPORT lean_obj_res conduit_channel_recv(
 
         /* Signal that space is available */
         pthread_cond_signal(&ch->not_full);
+        select_notify_waiters(ch);
 
         pthread_mutex_unlock(&ch->mutex);
 
@@ -390,6 +417,7 @@ LEAN_EXPORT lean_obj_res conduit_channel_try_send(
 
             /* Wake one waiting receiver */
             pthread_cond_signal(&ch->not_empty);
+            select_notify_waiters(ch);
 
             /* Wait for receiver to take it (they should be immediate) */
             while (!ch->pending_taken && !ch->closed) {
@@ -423,6 +451,7 @@ LEAN_EXPORT lean_obj_res conduit_channel_try_send(
         ch->count++;
 
         pthread_cond_signal(&ch->not_empty);
+        select_notify_waiters(ch);
 
         pthread_mutex_unlock(&ch->mutex);
         return lean_io_result_mk_ok(lean_box(0)); /* ok */
@@ -453,6 +482,7 @@ LEAN_EXPORT lean_obj_res conduit_channel_try_recv(
             ch->pending_taken = true;
             ch->pending_ready = false;  /* Clear to prevent duplicate reads */
             pthread_cond_signal(&ch->not_full);
+            select_notify_waiters(ch);
             pthread_mutex_unlock(&ch->mutex);
 
             /* Return .ok value (constructor 0) */
@@ -490,6 +520,7 @@ LEAN_EXPORT lean_obj_res conduit_channel_try_recv(
         ch->count--;
 
         pthread_cond_signal(&ch->not_full);
+        select_notify_waiters(ch);
 
         pthread_mutex_unlock(&ch->mutex);
 
@@ -521,6 +552,7 @@ LEAN_EXPORT lean_obj_res conduit_channel_close(
         /* Wake all waiting threads */
         pthread_cond_broadcast(&ch->not_empty);
         pthread_cond_broadcast(&ch->not_full);
+        select_notify_waiters(ch);
     }
 
     pthread_mutex_unlock(&ch->mutex);
@@ -584,11 +616,41 @@ LEAN_EXPORT lean_obj_res conduit_channel_capacity(
 }
 
 /* ============================================================================
+ * Select Waiter Helpers
+ * ============================================================================ */
+
+/* Register a select waiter on a channel (called with channel mutex held) */
+static void select_register_waiter(conduit_channel_t *ch, conduit_select_waiter_t *w) {
+    w->next = ch->select_waiters;
+    ch->select_waiters = w;
+}
+
+/* Unregister a select waiter from a channel (called with channel mutex held) */
+static void select_unregister_waiter(conduit_channel_t *ch, conduit_select_waiter_t *w) {
+    conduit_select_waiter_t **pp = &ch->select_waiters;
+    while (*pp != NULL) {
+        if (*pp == w) {
+            *pp = w->next;
+            return;
+        }
+        pp = &(*pp)->next;
+    }
+}
+
+/* Notify all select waiters on a channel (called with channel mutex held) */
+static void select_notify_waiters(conduit_channel_t *ch) {
+    conduit_select_waiter_t *w = ch->select_waiters;
+    while (w != NULL) {
+        pthread_mutex_lock(w->mutex);
+        w->notified = true;
+        pthread_cond_signal(w->cond);
+        pthread_mutex_unlock(w->mutex);
+        w = w->next;
+    }
+}
+
+/* ============================================================================
  * Select Implementation
- *
- * For now, we implement a simple polling-based select that checks each
- * channel in order and returns the first ready one. A more sophisticated
- * implementation would register waiters on all channels.
  * ============================================================================ */
 
 /*
@@ -649,6 +711,15 @@ LEAN_EXPORT lean_obj_res conduit_select_poll(
     return lean_io_result_mk_ok(lean_box(0)); /* none */
 }
 
+/* Comparison function for sorting channels by address */
+static int compare_channels(const void *a, const void *b) {
+    conduit_channel_t *ca = *(conduit_channel_t **)a;
+    conduit_channel_t *cb = *(conduit_channel_t **)b;
+    if (ca < cb) return -1;
+    if (ca > cb) return 1;
+    return 0;
+}
+
 /*
  * conduit_select_wait : Array (Channel × Bool) → Nat → IO (Option Nat)
  *
@@ -656,61 +727,150 @@ LEAN_EXPORT lean_obj_res conduit_select_poll(
  * timeout = 0 means wait forever.
  * Returns index of ready channel, or none on timeout.
  *
- * This is a simple implementation that polls with sleep.
- * A production implementation would use proper condition variables.
+ * Uses proper condition variable signaling for immediate wake-up.
  */
 LEAN_EXPORT lean_obj_res conduit_select_wait(
     b_lean_obj_arg cases_obj,
     b_lean_obj_arg timeout_obj,
     lean_obj_arg world
 ) {
-    size_t timeout_ms = lean_usize_of_nat(timeout_obj);
-    size_t elapsed = 0;
-    const size_t poll_interval = 1; /* 1ms */
-
-    while (timeout_ms == 0 || elapsed < timeout_ms) {
-        /* Poll all channels */
-        lean_object *result = conduit_select_poll(cases_obj, world);
-
-        /* Check if we got a result (not none) */
-        lean_object *inner = lean_ctor_get(result, 0);
-        if (!lean_is_scalar(inner)) {
-            /* Got Some result */
-            return result;
-        }
-        lean_dec(result);
-
-        /* Check if any channel is closed (for recv cases, closed = ready) */
-        size_t n = lean_array_size(cases_obj);
-        bool all_closed = true;
-        for (size_t i = 0; i < n; i++) {
-            lean_object *pair = lean_array_get_core(cases_obj, i);
-            lean_object *ch_obj = lean_ctor_get(pair, 0);
-            conduit_channel_t *ch = conduit_channel_unbox(ch_obj);
-
-            pthread_mutex_lock(&ch->mutex);
-            if (!ch->closed) {
-                all_closed = false;
-            }
-            pthread_mutex_unlock(&ch->mutex);
-
-            if (!all_closed) break;
-        }
-
-        if (all_closed) {
-            /* All channels closed, return none */
-            return lean_io_result_mk_ok(lean_box(0));
-        }
-
-        /* Sleep for poll interval */
-        struct timespec ts;
-        ts.tv_sec = 0;
-        ts.tv_nsec = poll_interval * 1000000; /* ms to ns */
-        nanosleep(&ts, NULL);
-
-        elapsed += poll_interval;
+    size_t n = lean_array_size(cases_obj);
+    if (n == 0) {
+        return lean_io_result_mk_ok(lean_box(0)); /* none */
     }
 
-    /* Timeout */
-    return lean_io_result_mk_ok(lean_box(0)); /* none */
+    size_t timeout_ms = lean_usize_of_nat(timeout_obj);
+
+    /* 1. First poll without waiting (fast path) */
+    lean_object *result = conduit_select_poll(cases_obj, world);
+    lean_object *inner = lean_ctor_get(result, 0);
+    if (!lean_is_scalar(inner)) {
+        return result; /* Already ready */
+    }
+    lean_dec(result);
+
+    /* 2. Collect unique channels and sort by address (for deadlock prevention) */
+    conduit_channel_t **channels = (conduit_channel_t **)malloc(n * sizeof(conduit_channel_t *));
+    if (!channels) {
+        return lean_io_result_mk_ok(lean_box(0)); /* none on alloc failure */
+    }
+
+    for (size_t i = 0; i < n; i++) {
+        lean_object *pair = lean_array_get_core(cases_obj, i);
+        lean_object *ch_obj = lean_ctor_get(pair, 0);
+        channels[i] = conduit_channel_unbox(ch_obj);
+    }
+
+    /* Sort by address to prevent deadlock when locking multiple channels */
+    qsort(channels, n, sizeof(conduit_channel_t *), compare_channels);
+
+    /* Remove duplicates (keep unique channels only) */
+    size_t unique_count = 0;
+    for (size_t i = 0; i < n; i++) {
+        if (unique_count == 0 || channels[i] != channels[unique_count - 1]) {
+            channels[unique_count++] = channels[i];
+        }
+    }
+
+    /* 3. Create waiter structure */
+    pthread_mutex_t wait_mutex;
+    pthread_cond_t wait_cond;
+    pthread_mutex_init(&wait_mutex, NULL);
+    pthread_cond_init(&wait_cond, NULL);
+
+    conduit_select_waiter_t waiter = {
+        .cond = &wait_cond,
+        .mutex = &wait_mutex,
+        .notified = false,
+        .next = NULL
+    };
+
+    /* 4. Lock all channels (in sorted order) and register waiter */
+    for (size_t i = 0; i < unique_count; i++) {
+        pthread_mutex_lock(&channels[i]->mutex);
+        select_register_waiter(channels[i], &waiter);
+    }
+
+    /* 5. Check if any ready now (may have become ready while registering) */
+    bool found_ready = false;
+    for (size_t i = 0; i < n && !found_ready; i++) {
+        lean_object *pair = lean_array_get_core(cases_obj, i);
+        lean_object *ch_obj = lean_ctor_get(pair, 0);
+        bool is_send = lean_unbox(lean_ctor_get(pair, 1)) != 0;
+        conduit_channel_t *ch = conduit_channel_unbox(ch_obj);
+
+        /* Note: we already hold the lock on this channel */
+        if (is_send) {
+            if (!ch->closed) {
+                if (ch->capacity > 0 && ch->count < ch->capacity) {
+                    found_ready = true;
+                } else if (ch->capacity == 0 && ch->waiting_receivers > 0 && !ch->pending_ready) {
+                    found_ready = true;
+                }
+            }
+        } else {
+            if (ch->count > 0 || (ch->pending_ready && !ch->pending_taken) || ch->closed) {
+                found_ready = true;
+            }
+        }
+    }
+
+    if (found_ready) {
+        /* Unregister and unlock immediately */
+        for (size_t i = unique_count; i > 0; i--) {
+            select_unregister_waiter(channels[i-1], &waiter);
+            pthread_mutex_unlock(&channels[i-1]->mutex);
+        }
+        pthread_cond_destroy(&wait_cond);
+        pthread_mutex_destroy(&wait_mutex);
+        free(channels);
+        return conduit_select_poll(cases_obj, world);
+    }
+
+    /* 6. Not ready - unlock channels and wait on condition */
+    pthread_mutex_lock(&wait_mutex);
+    for (size_t i = unique_count; i > 0; i--) {
+        pthread_mutex_unlock(&channels[i-1]->mutex);
+    }
+
+    /* 7. Wait loop with timeout */
+    struct timespec deadline;
+    if (timeout_ms > 0) {
+        clock_gettime(CLOCK_REALTIME, &deadline);
+        deadline.tv_sec += timeout_ms / 1000;
+        deadline.tv_nsec += (timeout_ms % 1000) * 1000000;
+        if (deadline.tv_nsec >= 1000000000) {
+            deadline.tv_sec++;
+            deadline.tv_nsec -= 1000000000;
+        }
+    }
+
+    while (!waiter.notified) {
+        if (timeout_ms == 0) {
+            pthread_cond_wait(&wait_cond, &wait_mutex);
+        } else {
+            int rc = pthread_cond_timedwait(&wait_cond, &wait_mutex, &deadline);
+            if (rc == ETIMEDOUT) {
+                break;
+            }
+        }
+    }
+    pthread_mutex_unlock(&wait_mutex);
+
+    /* 8. Unregister from all channels */
+    for (size_t i = 0; i < unique_count; i++) {
+        pthread_mutex_lock(&channels[i]->mutex);
+        select_unregister_waiter(channels[i], &waiter);
+        pthread_mutex_unlock(&channels[i]->mutex);
+    }
+
+    /* 9. Final poll to get ready index */
+    result = conduit_select_poll(cases_obj, world);
+
+    /* 10. Cleanup */
+    pthread_cond_destroy(&wait_cond);
+    pthread_mutex_destroy(&wait_mutex);
+    free(channels);
+
+    return result;
 }
