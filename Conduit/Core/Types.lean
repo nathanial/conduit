@@ -80,6 +80,27 @@ def map {α β : Type} (f : α → β) : TryResult α → TryResult β
   | .empty => .empty
   | .closed => .closed
 
+def bind {α β : Type} (ma : TryResult α) (f : α → TryResult β) : TryResult β :=
+  match ma with
+  | .ok a => f a
+  | .empty => .empty
+  | .closed => .closed
+
+def pure {α : Type} (a : α) : TryResult α := .ok a
+
 end TryResult
+
+instance : Functor TryResult where
+  map := TryResult.map
+
+instance : Applicative TryResult where
+  pure := TryResult.pure
+  seq f x := match f with
+    | .ok f' => TryResult.map f' (x ())
+    | .empty => .empty
+    | .closed => .closed
+
+instance : Monad TryResult where
+  bind := TryResult.bind
 
 end Conduit

@@ -218,57 +218,25 @@ opaque stats (ch : Channel α) : IO ChannelStats
 
 ---
 
-### [Priority: Medium] Add Functor/Monad Instances for TryResult
+### [COMPLETED] Add Functor/Monad Instances for TryResult
 
-**Current State:** `TryResult` has a `map` function but no typeclass instances.
+**Status:** ✅ Implemented
 
-**Proposed Change:**
-```lean
-instance : Functor TryResult where
-  map := TryResult.map
-
-instance : Applicative TryResult where
-  pure := TryResult.ok
-  seq f x := match f with
-    | .ok f' => TryResult.map f' (x ())
-    | .empty => .empty
-    | .closed => .closed
-
-instance : Monad TryResult where
-  bind ma f := match ma with
-    | .ok a => f a
-    | .empty => .empty
-    | .closed => .closed
-```
-
-**Benefits:**
-- More idiomatic Lean code
-- Enables do-notation for chained tryRecv operations
-- Better composability
-
-**Affected Files:**
-- `/Users/Shared/Projects/lean-workspace/util/conduit/Conduit/Core/Types.lean`
-
-**Estimated Effort:** Small
+**Solution:**
+- Added `Functor`, `Applicative`, and `Monad` instances for `TryResult`
+- Added `bind` and `pure` helper functions
+- Enables do-notation: `do let a ← tryRecv ch1; let b ← tryRecv ch2; pure (a, b)`
 
 ---
 
-### [Priority: Medium] Make Combinators Use Buffered Output Channels
+### [COMPLETED] Make Combinators Use Buffered Output Channels
 
-**Current State:** The `map`, `filter`, and `merge` combinators create unbuffered output channels.
+**Status:** ✅ Implemented
 
-**Proposed Change:**
-- Use buffered output channels for better throughput
-- Optionally accept buffer size parameter
-
-**Benefits:**
-- Better performance when producer is faster than consumer
-- Reduces blocking in transformation pipelines
-
-**Affected Files:**
-- `/Users/Shared/Projects/lean-workspace/util/conduit/Conduit/Channel/Combinators.lean` (lines 65-101)
-
-**Estimated Effort:** Small
+**Solution:**
+- Combinators `map`, `filter`, and `merge` use buffered output channels
+- Default buffer size of 16, configurable via optional `bufferSize` parameter
+- Example: `ch.map f 32` uses buffer size 32
 
 ---
 
@@ -453,10 +421,10 @@ The FFI uses POSIX pthreads. For Windows support:
 | Category | Completed | Medium Priority | Low Priority |
 |----------|-----------|-----------------|--------------|
 | Features | 4 | 2 | 4 |
-| Improvements | 3 | 2 | 2 |
+| Improvements | 5 | 0 | 2 |
 | Cleanup | 0 | 3 | 4 |
 
-**Completed Features:**
+**Completed:**
 - ✅ Proper Select Wait with Condition Variables
 - ✅ Unbuffered Channel trySend
 - ✅ Fix Select Send Readiness for Unbuffered Channels
@@ -464,9 +432,10 @@ The FFI uses POSIX pthreads. For Windows support:
 - ✅ Timeout Variants (sendTimeout, recvTimeout)
 - ✅ Channel ForIn Instance
 - ✅ pthread_cond_timedwait for Select
+- ✅ Functor/Monad instances for TryResult
+- ✅ Buffered output channels for combinators
 
 **Recommended Next Steps:**
-1. Add Functor/Monad instances for TryResult
-2. Make combinators use buffered output channels
-3. Add Broadcast Channels for pub/sub scenarios
-4. Expand test coverage for concurrency scenarios
+1. Add Broadcast Channels for pub/sub scenarios
+2. Add Pipeline Combinator for cleaner composition
+3. Expand test coverage for concurrency scenarios

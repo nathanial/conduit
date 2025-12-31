@@ -105,6 +105,74 @@ test "map preserves closed" := do
   let mapped := r.map (· * 2)
   mapped.isClosed ≡ true
 
+testSuite "TryResult Functor/Monad"
+
+test "Functor map via <$>" := do
+  let r : TryResult Nat := .ok 10
+  let mapped := (· + 5) <$> r
+  match mapped with
+  | .ok v => v ≡ 15
+  | _ => throw (IO.userError "expected .ok")
+
+test "Applicative pure creates ok" := do
+  let r : TryResult Nat := pure 42
+  match r with
+  | .ok v => v ≡ 42
+  | _ => throw (IO.userError "expected .ok")
+
+test "Applicative seq applies function" := do
+  let f : TryResult (Nat → Nat) := .ok (· * 2)
+  let x : TryResult Nat := .ok 21
+  let result := f <*> x
+  match result with
+  | .ok v => v ≡ 42
+  | _ => throw (IO.userError "expected .ok")
+
+test "Applicative seq with empty function returns empty" := do
+  let f : TryResult (Nat → Nat) := .empty
+  let x : TryResult Nat := .ok 21
+  let result := f <*> x
+  result.isEmpty ≡ true
+
+test "Applicative seq with closed function returns closed" := do
+  let f : TryResult (Nat → Nat) := .closed
+  let x : TryResult Nat := .ok 21
+  let result := f <*> x
+  result.isClosed ≡ true
+
+test "Monad bind chains ok values" := do
+  let r : TryResult Nat := .ok 10
+  let result := r >>= fun n => TryResult.ok (n * 2)
+  match result with
+  | .ok v => v ≡ 20
+  | _ => throw (IO.userError "expected .ok")
+
+test "Monad bind propagates empty" := do
+  let r : TryResult Nat := .empty
+  let result := r >>= fun n => TryResult.ok (n * 2)
+  result.isEmpty ≡ true
+
+test "Monad bind propagates closed" := do
+  let r : TryResult Nat := .closed
+  let result := r >>= fun n => TryResult.ok (n * 2)
+  result.isClosed ≡ true
+
+test "Monad do-notation works" := do
+  let result : TryResult Nat := do
+    let a ← TryResult.ok 10
+    let b ← TryResult.ok 20
+    pure (a + b)
+  match result with
+  | .ok v => v ≡ 30
+  | _ => throw (IO.userError "expected .ok")
+
+test "Monad do-notation short-circuits on empty" := do
+  let result : TryResult Nat := do
+    let a ← TryResult.ok 10
+    let _ ← (TryResult.empty : TryResult Nat)
+    pure a
+  result.isEmpty ≡ true
+
 #generate_tests
 
 end ConduitTests.TypeTests
