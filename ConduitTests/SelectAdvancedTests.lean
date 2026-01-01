@@ -138,7 +138,112 @@ test "Builder.size counts mixed cases" := do
     |>.addRecv ch1
   b.size ≡ 3
 
-testSuite "selectWait Immediate Wake-up"
+testSuite "selectWait (blocking)"
+
+test "selectWait returns immediately when channel ready" := do
+  let ch ← Channel.newBuffered Nat 1
+  let _ ← ch.send 42
+  let start ← IO.monoMsNow
+  let result ← selectWait (recvCase ch)
+  let elapsed ← IO.monoMsNow
+  result ≡? 0
+  -- Should complete almost instantly (< 50ms)
+  if elapsed - start >= 50 then
+    throw (IO.userError s!"Too slow: {elapsed - start}ms")
+
+test "selectWait blocks until channel ready" := do
+  let ch ← Channel.newBuffered Nat 1
+  let start ← IO.monoMsNow
+  -- Spawn task that sends after 50ms
+  let _ ← IO.asTask (prio := .dedicated) do
+    IO.sleep 50
+    let _ ← ch.send 42
+    pure ()
+  let result ← selectWait (recvCase ch)
+  let elapsed ← IO.monoMsNow
+  result ≡? 0
+  -- Should complete in ~50-150ms
+  if elapsed - start < 40 then
+    throw (IO.userError s!"Too fast: {elapsed - start}ms")
+  if elapsed - start >= 300 then
+    throw (IO.userError s!"Too slow: {elapsed - start}ms")
+
+test "selectWait with multiple channels returns first ready" := do
+  let ch1 ← Channel.newBuffered Nat 1
+  let ch2 ← Channel.newBuffered Nat 1
+  let _ ← IO.asTask (prio := .dedicated) do
+    IO.sleep 30
+    let _ ← ch2.send 99
+    pure ()
+  let result ← selectWait (do recvCase ch1; recvCase ch2)
+  result ≡? 1  -- ch2 was ready first
+
+test "selectWait wakes on channel close" := do
+  let ch ← Channel.newBuffered Nat 1
+  let _ ← IO.asTask (prio := .dedicated) do
+    IO.sleep 30
+    ch.close
+    pure ()
+  let result ← selectWait (recvCase ch)
+  -- Closed channel is ready for recv (returns none)
+  result ≡? 0
+
+test "selectWait with send case blocks until space" := do
+  let ch ← Channel.newBuffered Nat 1
+  let _ ← ch.send 1  -- Fill buffer
+  let start ← IO.monoMsNow
+  -- Spawn task that receives after 50ms
+  let _ ← IO.asTask (prio := .dedicated) do
+    IO.sleep 50
+    let _ ← ch.recv
+    pure ()
+  let result ← selectWait (sendCase ch 42)
+  let elapsed ← IO.monoMsNow
+  result ≡? 0
+  -- Should complete in ~50-150ms
+  if elapsed - start < 40 then
+    throw (IO.userError s!"Too fast: {elapsed - start}ms")
+  if elapsed - start >= 300 then
+    throw (IO.userError s!"Too slow: {elapsed - start}ms")
+
+testSuite "Select.withDefault"
+
+test "withDefault returns index when case ready" := do
+  let ch ← Channel.newBuffered Nat 1
+  let _ ← ch.send 42
+  let builder := Select.Builder.empty.addRecv ch
+  let result ← Select.withDefault builder
+  result ≡? 0
+
+test "withDefault returns none when no case ready (default branch)" := do
+  let ch ← Channel.newBuffered Nat 1
+  -- Channel empty, recv would block
+  let builder := Select.Builder.empty.addRecv ch
+  let result ← Select.withDefault builder
+  shouldBeNone result
+
+test "withDefault with send case returns ready when space" := do
+  let ch ← Channel.newBuffered Nat 3
+  let builder := Select.Builder.empty.addSend ch 42
+  let result ← Select.withDefault builder
+  result ≡? 0
+
+test "withDefault with send case returns none when full" := do
+  let ch ← Channel.newBuffered Nat 1
+  let _ ← ch.send 1  -- Fill buffer
+  let builder := Select.Builder.empty.addSend ch 42
+  let result ← Select.withDefault builder
+  shouldBeNone result
+
+test "withDefault with mixed cases returns first ready" := do
+  let ch1 ← Channel.newBuffered Nat 1
+  let ch2 ← Channel.newBuffered Nat 1
+  let _ ← ch2.send 99  -- Only ch2 has data
+  let builder := Select.Builder.empty.addRecv ch1 |>.addRecv ch2
+  let result ← Select.withDefault builder
+  result ≡? 1
+
+testSuite "selectTimeout Immediate Wake-up"
 
 test "selectTimeout wakes immediately when channel becomes ready" := do
   let ch ← Channel.newBuffered Nat 1

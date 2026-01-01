@@ -175,6 +175,42 @@ test "hub closes all subscribers when source closes" := do
   shouldBeNone v1
   shouldBeNone v2
 
+testSuite "Hub.subscriberCount"
+
+test "subscriberCount starts at zero" := do
+  let source ← Channel.newBuffered Nat 10
+  let h ← Broadcast.hub source
+  let count ← h.subscriberCount
+  count ≡ 0
+  source.close
+
+test "subscriberCount increments on subscribe" := do
+  let source ← Channel.newBuffered Nat 10
+  let h ← Broadcast.hub source
+  let _ ← h.subscribe
+  let count1 ← h.subscriberCount
+  count1 ≡ 1
+  let _ ← h.subscribe
+  let count2 ← h.subscriberCount
+  count2 ≡ 2
+  let _ ← h.subscribe
+  let count3 ← h.subscriberCount
+  count3 ≡ 3
+  source.close
+
+test "subscriberCount after source close" := do
+  let source ← Channel.newBuffered Nat 10
+  let h ← Broadcast.hub source
+  let _ ← h.subscribe
+  let _ ← h.subscribe
+  let countBefore ← h.subscriberCount
+  countBefore ≡ 2
+  source.close
+  IO.sleep 50
+  -- Count may still be 2 (subscribers exist but are closed)
+  let countAfter ← h.subscriberCount
+  countAfter ≡ 2
+
 #generate_tests
 
 end ConduitTests.BroadcastTests
