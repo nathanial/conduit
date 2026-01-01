@@ -83,28 +83,22 @@ def Hub.subscribe (h : Hub α) : IO (Option (Channel α))
 
 ---
 
-### [Priority: Medium] Pipeline Combinator
+### [COMPLETED] Pipeline Combinator
 
-**Description:** Add a pipeline combinator for chaining channel transformations.
+**Status:** ✅ Implemented
 
-**Rationale:**
-- Cleaner composition of map/filter/etc
-- Avoids deep nesting of combinator calls
-- Common pattern in stream processing
+**Solution:**
+- Added `pipe` and `pipeFilter` functions with operator syntax
+- `|>>` for map: `ch |>> f` equivalent to `ch.map f`
+- `|>?` for filter: `ch |>? p` equivalent to `ch.filter p`
 
-**Affected Files:**
-- `/Users/Shared/Projects/lean-workspace/util/conduit/Conduit/Channel/Combinators.lean`
-
-**Proposed API:**
+**Usage:**
 ```lean
-def pipeline (ch : Channel α) (stages : List (Channel α → IO (Channel β))) : IO (Channel β)
--- Or operator syntax:
-def (|>>) (ch : Channel α) (f : α → β) : IO (Channel β) := ch.map f
+let step1 ← ch |>? (· > 2)      -- filter
+let step2 ← step1 |>> (· * 10)  -- map
+-- Or with bind:
+let result ← ch |>? (· > 2) >>= (· |>> (· * 10))
 ```
-
-**Estimated Effort:** Small
-
-**Dependencies:** None
 
 ---
 
@@ -423,7 +417,7 @@ The FFI uses POSIX pthreads. For Windows support:
 
 | Category | Completed | Medium Priority | Low Priority |
 |----------|-----------|-----------------|--------------|
-| Features | 5 | 1 | 4 |
+| Features | 6 | 0 | 4 |
 | Improvements | 5 | 0 | 2 |
 | Cleanup | 0 | 3 | 4 |
 
@@ -438,8 +432,9 @@ The FFI uses POSIX pthreads. For Windows support:
 - ✅ Functor/Monad instances for TryResult
 - ✅ Buffered output channels for combinators
 - ✅ Broadcast Channels (fan-out with static and dynamic subscription)
+- ✅ Pipeline Combinator (`|>>` for map, `|>?` for filter)
 
 **Recommended Next Steps:**
-1. Add Pipeline Combinator for cleaner composition
+1. Add Worker Pool pattern for parallel processing
 2. Expand test coverage for concurrency scenarios
-3. Add Worker Pool pattern for parallel processing
+3. Add Batch Receive for bulk processing

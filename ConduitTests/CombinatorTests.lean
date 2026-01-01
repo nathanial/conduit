@@ -235,6 +235,39 @@ test "merge with empty array" := do
   let closed ← merged.isClosed
   closed ≡ true
 
+testSuite "Pipeline Operators"
+
+test "pipe operator maps values" := do
+  let ch ← Channel.fromArray #[1, 2, 3]
+  let mapped ← ch |>> (· * 2)
+  let result ← mapped.drain
+  result ≡ #[2, 4, 6]
+
+test "pipeFilter operator filters values" := do
+  let ch ← Channel.fromArray #[1, 2, 3, 4, 5]
+  let filtered ← ch |>? (· % 2 == 0)
+  let result ← filtered.drain
+  result ≡ #[2, 4]
+
+test "pipeline operators chain" := do
+  let ch ← Channel.fromArray #[1, 2, 3, 4, 5]
+  let step1 ← ch |>? (· > 2)
+  let step2 ← step1 |>> (· * 10)
+  let result ← step2.drain
+  result ≡ #[30, 40, 50]
+
+test "pipe with type change" := do
+  let ch ← Channel.fromArray #[1, 2, 3]
+  let mapped ← ch |>> toString
+  let result ← mapped.drain
+  result ≡ #["1", "2", "3"]
+
+test "pipeFilter keeps all when predicate always true" := do
+  let ch ← Channel.fromArray #[1, 2, 3]
+  let filtered ← ch |>? (fun _ => true)
+  let result ← filtered.drain
+  result ≡ #[1, 2, 3]
+
 #generate_tests
 
 end ConduitTests.CombinatorTests

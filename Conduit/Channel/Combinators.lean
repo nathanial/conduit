@@ -135,4 +135,15 @@ def empty (α : Type) : IO (Channel α) := do
   ch.close
   pure ch
 
+/-- Pipeline operator for map. Equivalent to `ch.map f`. -/
+def pipe (ch : Channel α) (f : α → β) (bufferSize : Nat := defaultBufferSize)
+    : IO (Channel β) := ch.map f bufferSize
+
+/-- Pipeline operator for filter. Equivalent to `ch.filter p`. -/
+def pipeFilter (ch : Channel α) (p : α → Bool) (bufferSize : Nat := defaultBufferSize)
+    : IO (Channel α) := ch.filter p bufferSize
+
+infixl:55 " |>> " => pipe
+infixl:55 " |>? " => pipeFilter
+
 end Conduit.Channel
