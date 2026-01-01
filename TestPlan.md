@@ -2,7 +2,7 @@
 
 ## Current Coverage
 
-**163 tests across 10 suites**
+**176 tests across 11 suites**
 
 ### Test Suites
 
@@ -13,10 +13,10 @@
 | SelectTests | 4 | Basic select/poll |
 | TypeTests | 30 | SendResult, TryResult operations |
 | TrySendTests | 12 | Non-blocking send, len |
-| SelectAdvancedTests | 21 | Select with send cases, timeout |
+| SelectAdvancedTests | 31 | Select with send cases, timeout, wait, withDefault |
 | ConcurrencyTests | 10 | Concurrent operations |
 | TimeoutTests | 11 | sendTimeout, recvTimeout |
-| BroadcastTests | 12 | Broadcast and Hub |
+| BroadcastTests | 15 | Broadcast, Hub, subscriberCount |
 | EdgeCaseTests | 17 | Edge cases, stress tests |
 
 ### Coverage by Area
@@ -37,9 +37,9 @@
 
 ### Untested API Functions
 
-- [ ] `Select.wait` - Blocking select without timeout
-- [ ] `Select.withDefault` - Select with default case (non-blocking)
-- [ ] `Hub.subscriberCount` - Get number of active subscribers
+- [x] `Select.wait` - Blocking select without timeout *(added 5 tests)*
+- [x] `Select.withDefault` - Select with default case (non-blocking) *(added 5 tests)*
+- [x] `Hub.subscriberCount` - Get number of active subscribers *(added 3 tests)*
 
 ### Stress Tests Needed
 
