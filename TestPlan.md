@@ -2,7 +2,7 @@
 
 ## Current Coverage
 
-**186 tests across 11 suites**
+**204 tests across 12 suites**
 
 ### Test Suites
 
@@ -17,7 +17,8 @@
 | ConcurrencyTests | 20 | Concurrent operations, race conditions |
 | TimeoutTests | 11 | sendTimeout, recvTimeout |
 | BroadcastTests | 15 | Broadcast, Hub, subscriberCount |
-| EdgeCaseTests | 17 | Edge cases, stress tests |
+| EdgeCaseTests | 17 | Edge cases |
+| StressTests | 18 | High-volume, large buffers, sustained patterns |
 
 ### Coverage by Area
 
@@ -43,12 +44,12 @@
 
 ### Stress Tests Needed
 
-- [ ] High-volume concurrent producers (multiple tasks sending 1000+ values)
-- [ ] High-volume concurrent consumers (multiple tasks receiving from one channel)
-- [ ] Large buffer sizes (1000+ capacity)
-- [ ] Many channels lifecycle (create/close 100+ channels rapidly)
-- [ ] Sustained producer-consumer (running for several seconds)
-- [ ] Memory pressure (channels with large values)
+- [x] High-volume concurrent producers (multiple tasks sending 1000+ values) *(added)*
+- [x] High-volume concurrent consumers (multiple tasks receiving from one channel) *(added)*
+- [x] Large buffer sizes (1000+ capacity) *(added: 1000, 5000, 10000)*
+- [x] Many channels lifecycle (create/close 100+ channels rapidly) *(added: 100-200 channels)*
+- [x] Sustained producer-consumer (running for several seconds) *(added: 500ms tests)*
+- [x] Memory pressure (channels with large values) *(added: 1KB strings, 1000-element arrays)*
 
 ### Race Condition Tests Needed
 
@@ -64,7 +65,7 @@
 
 ### Resource Tests Needed
 
-- [ ] Channel with large values (big arrays/strings)
+- [x] Channel with large values (big arrays/strings) *(added in StressTests)*
 - [ ] Channel finalizer works correctly (channel GC'd without explicit close)
 - [ ] No memory leaks under sustained load
 
