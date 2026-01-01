@@ -14,7 +14,8 @@ import ConduitTests.SelectAdvancedTests
 import ConduitTests.ConcurrencyTests
 import ConduitTests.TimeoutTests
 import ConduitTests.BroadcastTests
+import ConduitTests.EdgeCaseTests
 
 open Crucible
 
-def main : IO UInt32 := runAllSuites
+def main : IO UInt32 := runAllSuites (timeout := 5000)

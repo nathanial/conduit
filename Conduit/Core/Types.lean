@@ -24,11 +24,11 @@ instance {α : Type} : Inhabited (TryResult α) where
 
 namespace SendResult
 
-def isOk : SendResult → Bool
+@[inline] def isOk : SendResult → Bool
   | .ok => true
   | .closed => false
 
-def isClosed : SendResult → Bool
+@[inline] def isClosed : SendResult → Bool
   | .ok => false
   | .closed => true
 
@@ -43,15 +43,15 @@ inductive TrySendResult where
 
 namespace TrySendResult
 
-def isOk : TrySendResult → Bool
+@[inline] def isOk : TrySendResult → Bool
   | .ok => true
   | _ => false
 
-def isFull : TrySendResult → Bool
+@[inline] def isFull : TrySendResult → Bool
   | .full => true
   | _ => false
 
-def isClosed : TrySendResult → Bool
+@[inline] def isClosed : TrySendResult → Bool
   | .closed => true
   | _ => false
 
@@ -59,34 +59,34 @@ end TrySendResult
 
 namespace TryResult
 
-def isOk {α : Type} : TryResult α → Bool
+@[inline] def isOk {α : Type} : TryResult α → Bool
   | .ok _ => true
   | _ => false
 
-def isEmpty {α : Type} : TryResult α → Bool
+@[inline] def isEmpty {α : Type} : TryResult α → Bool
   | .empty => true
   | _ => false
 
-def isClosed {α : Type} : TryResult α → Bool
+@[inline] def isClosed {α : Type} : TryResult α → Bool
   | .closed => true
   | _ => false
 
-def toOption {α : Type} : TryResult α → Option α
+@[inline] def toOption {α : Type} : TryResult α → Option α
   | .ok v => some v
   | _ => none
 
-def map {α β : Type} (f : α → β) : TryResult α → TryResult β
+@[inline] def map {α β : Type} (f : α → β) : TryResult α → TryResult β
   | .ok v => .ok (f v)
   | .empty => .empty
   | .closed => .closed
 
-def bind {α β : Type} (ma : TryResult α) (f : α → TryResult β) : TryResult β :=
+@[inline] def bind {α β : Type} (ma : TryResult α) (f : α → TryResult β) : TryResult β :=
   match ma with
   | .ok a => f a
   | .empty => .empty
   | .closed => .closed
 
-def pure {α : Type} (a : α) : TryResult α := .ok a
+@[inline] def pure {α : Type} (a : α) : TryResult α := .ok a
 
 end TryResult
 

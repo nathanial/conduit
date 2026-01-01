@@ -9,6 +9,9 @@ Go-style typed channels for Lean 4 with unbuffered and buffered modes.
 - **Thread-safe** - POSIX pthread primitives (mutex, condition variables)
 - **Select mechanism** - Poll multiple channels for readiness
 - **Combinators** - Higher-level operations like `forEach`, `map`, `filter`
+- **Pipeline operators** - `|>>` for map, `|>?` for filter
+- **Broadcast** - Fan-out from one source to multiple subscribers
+- **Timeout support** - `sendTimeout`, `recvTimeout` with configurable deadlines
 
 ## Installation
 
@@ -125,6 +128,49 @@ Channel.map (ch : Channel α) (f : α → β) : IO (Channel β)
 
 -- Filter values by predicate.
 Channel.filter (ch : Channel α) (p : α → Bool) : IO (Channel α)
+
+-- Merge multiple channels into one.
+Channel.merge (channels : Array (Channel α)) : IO (Channel α)
+```
+
+### Pipeline Operators
+
+```lean
+-- Map operator (equivalent to ch.map f)
+let doubled ← ch |>> (· * 2)
+
+-- Filter operator (equivalent to ch.filter p)
+let evens ← ch |>? (· % 2 == 0)
+
+-- Chain pipelines
+let result ← ch |>? (· > 2) |>> (· * 10)
+```
+
+### Broadcast
+
+```lean
+-- Static broadcast: create fixed number of subscribers
+let source ← Channel.newBuffered Nat 10
+let subscribers ← Broadcast.create source 3
+-- All 3 subscribers receive every value sent to source
+
+-- Dynamic hub: subscribe at runtime
+let hub ← Broadcast.hub source
+let sub1 ← hub.subscribe  -- some channel
+let sub2 ← hub.subscribe  -- some channel
+-- Late subscribers only receive future values
+```
+
+### Timeout Operations
+
+```lean
+-- Send with timeout (milliseconds)
+-- Returns: some true = sent, some false = closed, none = timeout
+let result ← ch.sendTimeout value 1000
+
+-- Receive with timeout (milliseconds)
+-- Returns: some (some v) = value, some none = closed, none = timeout
+let result ← ch.recvTimeout 1000
 ```
 
 ### Select

@@ -33,23 +33,28 @@ namespace Builder
 /-- Create an empty select builder -/
 def empty : Builder := { cases := #[] }
 
+/-- Erase the type parameter from a channel handle.
+    Safe because Channel α is an opaque pointer regardless of α (phantom type). -/
+private unsafe def eraseChannelTypeImpl {α : Type} (ch : Channel α) : Channel Unit :=
+  unsafeCast ch
+
+/-- Safe wrapper for type erasure. -/
+@[implemented_by eraseChannelTypeImpl]
+private def eraseChannelType {α : Type} (ch : Channel α) : Channel Unit := ch
+
 /-- Add a receive case -/
-def addRecv {α : Type} (b : Builder) (ch : Channel α) : Builder :=
-  -- Safe cast since Channel α = Channel Unit at runtime (phantom type)
-  let ch' : Channel Unit := cast (by rfl) ch
-  { cases := b.cases.push { channel := ch', isSend := false } }
+@[inline] def addRecv {α : Type} (b : Builder) (ch : Channel α) : Builder :=
+  { cases := b.cases.push { channel := eraseChannelType ch, isSend := false } }
 
 /-- Add a send case -/
-def addSend {α : Type} (b : Builder) (ch : Channel α) (_value : α) : Builder :=
-  -- Note: value is stored separately for actual send
-  let ch' : Channel Unit := cast (by rfl) ch
-  { cases := b.cases.push { channel := ch', isSend := true } }
+@[inline] def addSend {α : Type} (b : Builder) (ch : Channel α) (_value : α) : Builder :=
+  { cases := b.cases.push { channel := eraseChannelType ch, isSend := true } }
 
 /-- Number of cases -/
-def size (b : Builder) : Nat := b.cases.size
+@[inline] def size (b : Builder) : Nat := b.cases.size
 
 /-- Check if empty -/
-def isEmpty (b : Builder) : Bool := b.cases.isEmpty
+@[inline] def isEmpty (b : Builder) : Bool := b.cases.isEmpty
 
 end Builder
 
