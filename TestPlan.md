@@ -2,7 +2,7 @@
 
 ## Current Coverage
 
-**204 tests across 12 suites**
+**218 tests across 13 suites**
 
 ### Test Suites
 
@@ -19,6 +19,7 @@
 | BroadcastTests | 15 | Broadcast, Hub, subscriberCount |
 | EdgeCaseTests | 17 | Edge cases |
 | StressTests | 18 | High-volume, large buffers, sustained patterns |
+| ResourceTests | 14 | Allocation tracking, finalizers, memory leak detection |
 
 ### Coverage by Area
 
@@ -27,12 +28,14 @@
 | Basic ops (send/recv/close) | Complete | All operations tested |
 | Combinators | Complete | map, filter, merge, drain, forEach, pipe, pipeFilter |
 | TryResult/SendResult types | Complete | All type operations and instances |
-| Select with timeout | Good | poll, selectTimeout tested |
+| Select with timeout | Complete | poll, selectTimeout, selectWait, withDefault |
 | Non-blocking ops | Complete | trySend, tryRecv |
 | Timeout ops | Complete | sendTimeout, recvTimeout |
-| Broadcast/Hub | Good | Basic patterns covered |
-| Basic concurrency | Moderate | Producer-consumer, multiple senders/receivers |
-| Edge cases | Good | Capacity 1, empty arrays, rapid close |
+| Broadcast/Hub | Complete | Broadcast, Hub, subscriberCount |
+| Basic concurrency | Complete | Producer-consumer, multiple senders/receivers, race conditions |
+| Edge cases | Complete | Capacity 1, empty arrays, rapid close |
+| Stress tests | Complete | High-volume, large buffers, sustained patterns |
+| Resource management | Complete | Allocation tracking, finalizers, leak detection |
 
 ## Missing Coverage
 
@@ -66,8 +69,8 @@
 ### Resource Tests Needed
 
 - [x] Channel with large values (big arrays/strings) *(added in StressTests)*
-- [ ] Channel finalizer works correctly (channel GC'd without explicit close)
-- [ ] No memory leaks under sustained load
+- [x] Channel finalizer works correctly *(added in ResourceTests - allocation tracking via atomic counters)*
+- [x] No memory leaks under sustained load *(added in ResourceTests - leak detection tests)*
 
 ## Test Guidelines
 

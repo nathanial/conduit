@@ -92,3 +92,18 @@ opaque len (ch : @& Channel α) : IO Nat
 opaque capacity (ch : @& Channel α) : IO Nat
 
 end Conduit.Channel
+
+namespace Conduit.Channel.Debug
+
+/-- Get allocation statistics for testing finalizers.
+    Returns (alloc_count, free_count).
+    Used to verify that channel finalizers run correctly. -/
+@[extern "conduit_get_alloc_stats"]
+opaque getAllocStats : IO (Nat × Nat)
+
+/-- Reset allocation statistics counters to zero.
+    Useful for isolating stats between tests. -/
+@[extern "conduit_reset_alloc_stats"]
+opaque resetAllocStats : IO Unit
+
+end Conduit.Channel.Debug

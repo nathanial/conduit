@@ -16,6 +16,7 @@ import ConduitTests.TimeoutTests
 import ConduitTests.BroadcastTests
 import ConduitTests.EdgeCaseTests
 import ConduitTests.StressTests
+import ConduitTests.ResourceTests
 
 open Crucible
 

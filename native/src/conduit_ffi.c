@@ -11,6 +11,14 @@
 #include <stdint.h>
 #include <time.h>
 #include <errno.h>
+#include <stdatomic.h>
+
+/* ============================================================================
+ * Allocation Tracking (for testing finalizers and memory leaks)
+ * ============================================================================ */
+
+static _Atomic int64_t g_channel_alloc_count = 0;
+static _Atomic int64_t g_channel_free_count = 0;
 
 /* ============================================================================
  * Select Waiter Structure (forward declaration)
@@ -88,6 +96,7 @@ static lean_external_class *g_channel_class = NULL;
 static void conduit_channel_finalizer(void *ptr) {
     conduit_channel_t *ch = (conduit_channel_t *)ptr;
     if (ch) {
+        atomic_fetch_add(&g_channel_free_count, 1);
         pthread_mutex_lock(&ch->mutex);
 
         /* Release any values still in the buffer */
@@ -187,6 +196,7 @@ LEAN_EXPORT lean_obj_res conduit_channel_new(lean_obj_arg world) {
     ch->select_waiters = NULL;
     ch->closed = false;
 
+    atomic_fetch_add(&g_channel_alloc_count, 1);
     return lean_io_result_mk_ok(conduit_channel_box(ch));
 }
 
@@ -251,6 +261,7 @@ LEAN_EXPORT lean_obj_res conduit_channel_new_buffered(
     ch->select_waiters = NULL;
     ch->closed = false;
 
+    atomic_fetch_add(&g_channel_alloc_count, 1);
     return lean_io_result_mk_ok(conduit_channel_box(ch));
 }
 
@@ -1104,4 +1115,36 @@ LEAN_EXPORT lean_obj_res conduit_select_wait(
     free(channels);
 
     return result;
+}
+
+/* ============================================================================
+ * Allocation Statistics (for testing finalizers and memory leaks)
+ * ============================================================================ */
+
+/*
+ * conduit_get_alloc_stats : IO (Int × Int)
+ *
+ * Returns (alloc_count, free_count) for testing that finalizers run correctly.
+ */
+LEAN_EXPORT lean_obj_res conduit_get_alloc_stats(lean_obj_arg world) {
+    (void)world;
+    int64_t allocs = atomic_load(&g_channel_alloc_count);
+    int64_t frees = atomic_load(&g_channel_free_count);
+    /* Return tuple (allocs, frees) as (Nat, Nat) */
+    lean_object *pair = lean_alloc_ctor(0, 2, 0);
+    lean_ctor_set(pair, 0, lean_uint64_to_nat((uint64_t)allocs));
+    lean_ctor_set(pair, 1, lean_uint64_to_nat((uint64_t)frees));
+    return lean_io_result_mk_ok(pair);
+}
+
+/*
+ * conduit_reset_alloc_stats : IO Unit
+ *
+ * Resets allocation counters to zero (useful between tests).
+ */
+LEAN_EXPORT lean_obj_res conduit_reset_alloc_stats(lean_obj_arg world) {
+    (void)world;
+    atomic_store(&g_channel_alloc_count, 0);
+    atomic_store(&g_channel_free_count, 0);
+    return lean_io_result_mk_ok(lean_box(0));
 }
