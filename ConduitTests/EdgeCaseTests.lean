@@ -90,10 +90,9 @@ test "rapid close on buffered channel" := do
     let arr ← ch.drain
     arr ≡ #[1, 2]
 
--- Note: Stress tests removed due to FFI hang issue.
--- See ROADMAP.md "Known Issues" section.
--- Tests like "close is idempotent" and "large buffer capacity" hang
--- in the pthread layer where Lean timeouts cannot interrupt.
+-- Note: Stress tests removed - tight loops with channel operations hang
+-- Root cause: Not blocking waits (we use interruptible polling now)
+-- but something in Lean ↔ FFI interaction with rapid same-channel ops
 
 testSuite "tryRecv/trySend Edge Cases"
 

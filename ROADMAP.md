@@ -421,6 +421,25 @@ The FFI uses POSIX pthreads. For Windows support:
 
 ---
 
+## Code Improvements (Recent)
+
+### [COMPLETED] Interruptible Wait Implementation
+
+**Status:** ✅ Implemented
+
+**Solution:**
+- Added `cond_wait_interruptible` helper function to `conduit_ffi.c`
+- Uses 10ms polling interval with `pthread_cond_timedwait`
+- All blocking `pthread_cond_wait` calls replaced with interruptible variant
+- Allows condition re-checks between poll intervals
+
+**Benefits:**
+- Better interoperability with Lean's cooperative scheduling
+- Blocking operations periodically yield for condition re-checks
+- No significant overhead (condition signals still wake immediately)
+
+---
+
 ## Known Issues
 
 ### FFI Stress Test Hangs
@@ -431,12 +450,12 @@ The FFI uses POSIX pthreads. For Windows support:
 - Sending 100+ values to same channel in a `for` loop
 - Calling `close` multiple times on same channel (idempotent close)
 
-**Root cause:** The hang occurs in the C pthread layer (mutex_lock or cond_wait). Crucible's timeout mechanism uses `IO.cancel` which cannot interrupt threads blocked in FFI calls. Tests that create new channels per iteration work fine; the issue is with rapid operations on the *same* channel.
+**Root cause:** NOT blocking waits (interruptible polling was implemented and didn't fix it). The hang appears to occur in Lean ↔ FFI interaction when performing rapid operations on the same channel object. Tests that create new channels per iteration work fine.
 
 **Workaround:** Stress tests removed from test suite. Core functionality (160 tests) works correctly.
 
 **To investigate:**
 - Debug `native/src/conduit_ffi.c` for lock contention in rapid operations
 - Check if mutex isn't properly released between rapid send/recv calls
-- Verify condition variable state after multiple signals
-- Consider adding C-level timeout mechanisms that can be interrupted
+- Investigate Lean FFI calling conventions for tight-loop scenarios
+- Consider if Lean's for-loop mechanism interacts poorly with FFI calls

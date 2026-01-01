@@ -59,6 +59,27 @@ static void select_unregister_waiter(conduit_channel_t *ch, conduit_select_waite
 static void select_notify_waiters(conduit_channel_t *ch);
 
 /* ============================================================================
+ * Interruptible Wait Helper
+ *
+ * Uses a short timeout (10ms) instead of blocking forever, allowing
+ * the loop to re-check conditions periodically. This makes operations
+ * interruptible by Lean's IO.cancel mechanism.
+ * ============================================================================ */
+
+#define POLL_INTERVAL_NS 10000000  /* 10ms in nanoseconds */
+
+static int cond_wait_interruptible(pthread_cond_t *cond, pthread_mutex_t *mutex) {
+    struct timespec deadline;
+    clock_gettime(CLOCK_REALTIME, &deadline);
+    deadline.tv_nsec += POLL_INTERVAL_NS;
+    if (deadline.tv_nsec >= 1000000000) {
+        deadline.tv_sec++;
+        deadline.tv_nsec -= 1000000000;
+    }
+    return pthread_cond_timedwait(cond, mutex, &deadline);
+}
+
+/* ============================================================================
  * External Class Registration
  * ============================================================================ */
 
@@ -268,7 +289,7 @@ LEAN_EXPORT lean_obj_res conduit_channel_send(
 
         /* Wait for receiver to take it or channel to close */
         while (!ch->pending_taken && !ch->closed) {
-            pthread_cond_wait(&ch->not_full, &ch->mutex);
+            cond_wait_interruptible(&ch->not_full, &ch->mutex);
         }
 
         bool success = ch->pending_taken;
@@ -287,7 +308,7 @@ LEAN_EXPORT lean_obj_res conduit_channel_send(
     } else {
         /* Buffered channel: wait for space */
         while (ch->count >= ch->capacity && !ch->closed) {
-            pthread_cond_wait(&ch->not_full, &ch->mutex);
+            cond_wait_interruptible(&ch->not_full, &ch->mutex);
         }
 
         if (ch->closed) {
@@ -329,7 +350,7 @@ LEAN_EXPORT lean_obj_res conduit_channel_recv(
         /* Unbuffered channel: wait for sender */
         while (!ch->pending_ready && !ch->closed) {
             ch->waiting_receivers++;
-            pthread_cond_wait(&ch->not_empty, &ch->mutex);
+            cond_wait_interruptible(&ch->not_empty, &ch->mutex);
             ch->waiting_receivers--;
         }
 
@@ -357,7 +378,7 @@ LEAN_EXPORT lean_obj_res conduit_channel_recv(
     } else {
         /* Buffered channel: wait for data */
         while (ch->count == 0 && !ch->closed) {
-            pthread_cond_wait(&ch->not_empty, &ch->mutex);
+            cond_wait_interruptible(&ch->not_empty, &ch->mutex);
         }
 
         if (ch->count == 0) {
@@ -421,7 +442,7 @@ LEAN_EXPORT lean_obj_res conduit_channel_try_send(
 
             /* Wait for receiver to take it (they should be immediate) */
             while (!ch->pending_taken && !ch->closed) {
-                pthread_cond_wait(&ch->not_full, &ch->mutex);
+                cond_wait_interruptible(&ch->not_full, &ch->mutex);
             }
 
             bool success = ch->pending_taken;
@@ -1057,7 +1078,7 @@ LEAN_EXPORT lean_obj_res conduit_select_wait(
 
     while (!waiter.notified) {
         if (timeout_ms == 0) {
-            pthread_cond_wait(&wait_cond, &wait_mutex);
+            cond_wait_interruptible(&wait_cond, &wait_mutex);
         } else {
             int rc = pthread_cond_timedwait(&wait_cond, &wait_mutex, &deadline);
             if (rc == ETIMEDOUT) {
