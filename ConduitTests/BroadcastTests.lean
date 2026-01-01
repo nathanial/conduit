@@ -51,6 +51,24 @@ test "subscribers close when source closes" := do
     let v ← sub.recv
     shouldBeNone v
 
+test "broadcast handles concurrent receivers" := do
+  let source ← Channel.newBuffered Nat 10
+  let subs ← Broadcast.create source 3
+  -- Send values
+  for i in [:5] do
+    let _ ← source.send i
+  source.close
+  -- Spawn receivers that sum all values (use .dedicated for real threads)
+  let tasks ← subs.mapM fun sub => IO.asTask (prio := .dedicated) do
+    let mut sum := 0
+    for v in sub do
+      sum := sum + v
+    pure sum
+  -- All should sum to 0+1+2+3+4 = 10
+  for task in tasks do
+    let sum ← IO.wait task >>= IO.ofExcept
+    sum ≡ 10
+
 test "broadcast with single subscriber works" := do
   let source ← Channel.newBuffered String 10
   let subs ← Broadcast.create source 1
@@ -99,6 +117,35 @@ test "hub subscribers receive values" := do
   IO.sleep 100
   let v ← sub1.recv
   v ≡? 42
+
+test "hub late subscriber receives only future values" := do
+  let source ← Channel.newBuffered Nat 10
+  let h ← Broadcast.hub source
+  -- Subscribe first subscriber
+  let sub1Opt ← h.subscribe
+  let sub1 ← match sub1Opt with
+    | some ch => pure ch
+    | none => throw (IO.userError "subscribe failed")
+  -- Send first value and wait for it to be distributed
+  let _ ← source.send 1
+  IO.sleep 50
+  -- Subscribe second subscriber after first value
+  let sub2Opt ← h.subscribe
+  let sub2 ← match sub2Opt with
+    | some ch => pure ch
+    | none => throw (IO.userError "subscribe failed")
+  -- Send second value
+  let _ ← source.send 2
+  source.close
+  IO.sleep 100
+  -- sub1 gets both values
+  let v1a ← sub1.recv
+  let v1b ← sub1.recv
+  v1a ≡? 1
+  v1b ≡? 2
+  -- sub2 only gets second value
+  let v2 ← sub2.recv
+  v2 ≡? 2
 
 test "hub subscribe returns none after close" := do
   let source ← Channel.newBuffered Nat 10
