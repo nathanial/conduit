@@ -1,0 +1,133 @@
+/-
+  ConduitTests.BroadcastTests
+
+  Tests for broadcast channel functionality.
+-/
+
+import Conduit
+import Crucible
+
+namespace ConduitTests.BroadcastTests
+
+open Crucible
+open Conduit
+
+testSuite "Broadcast.create"
+
+test "broadcast with zero subscribers returns empty array" := do
+  let source ← Channel.newBuffered Nat 10
+  let subs ← Broadcast.create source 0
+  subs.size ≡ 0
+  source.close
+
+test "broadcast creates correct number of subscribers" := do
+  let source ← Channel.newBuffered Nat 10
+  let subs ← Broadcast.create source 3
+  subs.size ≡ 3
+  source.close
+
+test "all subscribers receive sent values" := do
+  let source ← Channel.newBuffered Nat 10
+  let subs ← Broadcast.create source 3
+  let _ ← source.send 42
+  let _ ← source.send 99
+  source.close
+  IO.sleep 100
+  -- Each subscriber should have both values
+  for sub in subs do
+    let v1 ← sub.recv
+    let v2 ← sub.recv
+    let v3 ← sub.recv
+    v1 ≡? 42
+    v2 ≡? 99
+    shouldBeNone v3
+
+test "subscribers close when source closes" := do
+  let source ← Channel.newBuffered Nat 10
+  let subs ← Broadcast.create source 2
+  source.close
+  IO.sleep 100
+  for sub in subs do
+    let v ← sub.recv
+    shouldBeNone v
+
+test "broadcast with single subscriber works" := do
+  let source ← Channel.newBuffered String 10
+  let subs ← Broadcast.create source 1
+  subs.size ≡ 1
+  let sub ← match subs[0]? with
+    | some ch => pure ch
+    | none => throw (IO.userError "expected subscriber")
+  let _ ← source.send "hello"
+  let _ ← source.send "world"
+  source.close
+  IO.sleep 100
+  let v1 ← sub.recv
+  let v2 ← sub.recv
+  v1 ≡? "hello"
+  v2 ≡? "world"
+
+testSuite "Broadcast.Hub"
+
+test "hub allows dynamic subscription" := do
+  let source ← Channel.newBuffered Nat 10
+  let h ← Broadcast.hub source
+  let sub1 ← h.subscribe
+  sub1.isSome ≡ true
+  let sub2 ← h.subscribe
+  sub2.isSome ≡ true
+  let count ← h.subscriberCount
+  count ≡ 2
+  source.close
+
+test "hub starts not closed" := do
+  let source ← Channel.newBuffered Nat 10
+  let h ← Broadcast.hub source
+  let closed ← h.isClosed
+  closed ≡ false
+  source.close
+
+test "hub subscribers receive values" := do
+  let source ← Channel.newBuffered Nat 10
+  let h ← Broadcast.hub source
+  let sub1Opt ← h.subscribe
+  let sub1 ← match sub1Opt with
+    | some ch => pure ch
+    | none => throw (IO.userError "subscribe failed")
+  let _ ← source.send 42
+  source.close
+  IO.sleep 100
+  let v ← sub1.recv
+  v ≡? 42
+
+test "hub subscribe returns none after close" := do
+  let source ← Channel.newBuffered Nat 10
+  let h ← Broadcast.hub source
+  source.close
+  IO.sleep 100
+  let closed ← h.isClosed
+  closed ≡ true
+  let result ← h.subscribe
+  result.isNone ≡ true
+
+test "hub closes all subscribers when source closes" := do
+  let source ← Channel.newBuffered Nat 10
+  let h ← Broadcast.hub source
+  let sub1Opt ← h.subscribe
+  let sub1 ← match sub1Opt with
+    | some ch => pure ch
+    | none => throw (IO.userError "subscribe failed")
+  let sub2Opt ← h.subscribe
+  let sub2 ← match sub2Opt with
+    | some ch => pure ch
+    | none => throw (IO.userError "subscribe failed")
+  source.close
+  IO.sleep 100
+  let v1 ← sub1.recv
+  let v2 ← sub2.recv
+  shouldBeNone v1
+  shouldBeNone v2
+
+#generate_tests
+
+end ConduitTests.BroadcastTests

@@ -49,22 +49,25 @@ This document tracks potential improvements, new features, and code cleanup oppo
 
 ---
 
-### [Priority: Medium] Broadcast Channels (Fan-out)
+### [COMPLETED] Broadcast Channels (Fan-out)
 
-**Description:** Add a broadcast channel type where multiple receivers each get a copy of every sent value.
+**Status:** ✅ Implemented
 
-**Rationale:**
-- Common pattern for event distribution
-- Useful for pub/sub scenarios
-- Would complement existing merge (fan-in) combinator
+**Solution:**
+- Added `Conduit/Broadcast.lean` with pure Lean implementation
+- Static broadcast: `Broadcast.create source n` creates n subscriber channels
+- Dynamic hub: `Broadcast.hub source` allows runtime subscription
+- Each subscriber gets an independent buffered channel
+- Distributor task forwards values from source to all subscribers
+- Subscribers close when source closes
 
-**Affected Files:**
-- New file: `/Users/Shared/Projects/lean-workspace/util/conduit/Conduit/Broadcast.lean`
-- `/Users/Shared/Projects/lean-workspace/util/conduit/native/src/conduit_ffi.c`
-
-**Estimated Effort:** Large
-
-**Dependencies:** None
+**API:**
+```lean
+def Broadcast.create (source : Channel α) (numSubscribers : Nat)
+    (bufferSize : Nat := 16) : IO (Array (Channel α))
+def Broadcast.hub (source : Channel α) (bufferSize : Nat := 16) : IO (Hub α)
+def Hub.subscribe (h : Hub α) : IO (Option (Channel α))
+```
 
 ---
 
@@ -420,7 +423,7 @@ The FFI uses POSIX pthreads. For Windows support:
 
 | Category | Completed | Medium Priority | Low Priority |
 |----------|-----------|-----------------|--------------|
-| Features | 4 | 2 | 4 |
+| Features | 5 | 1 | 4 |
 | Improvements | 5 | 0 | 2 |
 | Cleanup | 0 | 3 | 4 |
 
@@ -434,8 +437,9 @@ The FFI uses POSIX pthreads. For Windows support:
 - ✅ pthread_cond_timedwait for Select
 - ✅ Functor/Monad instances for TryResult
 - ✅ Buffered output channels for combinators
+- ✅ Broadcast Channels (fan-out with static and dynamic subscription)
 
 **Recommended Next Steps:**
-1. Add Broadcast Channels for pub/sub scenarios
-2. Add Pipeline Combinator for cleaner composition
-3. Expand test coverage for concurrency scenarios
+1. Add Pipeline Combinator for cleaner composition
+2. Expand test coverage for concurrency scenarios
+3. Add Worker Pool pattern for parallel processing

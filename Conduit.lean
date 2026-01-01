@@ -63,3 +63,4 @@ import Conduit.Channel.Combinators
 import Conduit.Select.Types
 import Conduit.Select
 import Conduit.Select.DSL
+import Conduit.Broadcast
