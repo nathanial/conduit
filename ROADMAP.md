@@ -431,11 +431,12 @@ The FFI uses POSIX pthreads. For Windows support:
 - Sending 100+ values to same channel in a `for` loop
 - Calling `close` multiple times on same channel (idempotent close)
 
-**Root cause:** Likely a subtle interaction between Lean's runtime (reference counting, IO monad) and the pthread mutex/condvar operations in the C FFI layer. Tests that create new channels per iteration work fine.
+**Root cause:** The hang occurs in the C pthread layer (mutex_lock or cond_wait). Crucible's timeout mechanism uses `IO.cancel` which cannot interrupt threads blocked in FFI calls. Tests that create new channels per iteration work fine; the issue is with rapid operations on the *same* channel.
 
-**Workaround:** Stress tests removed from test suite. Core functionality (150+ tests) works correctly.
+**Workaround:** Stress tests removed from test suite. Core functionality (160 tests) works correctly.
 
 **To investigate:**
 - Debug `native/src/conduit_ffi.c` for lock contention in rapid operations
 - Check if mutex isn't properly released between rapid send/recv calls
 - Verify condition variable state after multiple signals
+- Consider adding C-level timeout mechanisms that can be interrupted
