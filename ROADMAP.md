@@ -442,20 +442,36 @@ The FFI uses POSIX pthreads. For Windows support:
 
 ## Known Issues
 
-### FFI Stress Test Hangs
+### Crucible Test Framework Hang with Stress Tests
 
-**Issue:** Tests that perform many rapid operations on the same channel in tight loops cause hangs.
+**Issue:** Stress tests (100+ sends in a for-loop) hang when run through Crucible's `runAllSuites`.
 
-**Affected patterns:**
-- Sending 100+ values to same channel in a `for` loop
-- Calling `close` multiple times on same channel (idempotent close)
+**Key finding:** The same code works fine as a standalone program:
+```lean
+-- This works perfectly as a standalone executable
+def main : IO Unit := do
+  let ch ← Channel.newBuffered Nat 100
+  for i in [:100] do
+    let _ ← ch.send i
+  IO.println "Done"
+```
 
-**Root cause:** NOT blocking waits (interruptible polling was implemented and didn't fix it). The hang appears to occur in Lean ↔ FFI interaction when performing rapid operations on the same channel object. Tests that create new channels per iteration work fine.
+**Investigation results:**
+1. C-level tracing shows all `SEND ENTER`/`SEND EXIT` pairs complete correctly
+2. The C FFI code is NOT the problem
+3. Interruptible polling (10ms timeouts) didn't help
+4. The hang occurs specifically in Crucible's test framework interaction
+5. Just importing the test module with a stress test = OK
+6. Running `runAllSuites` with that module = HANG
 
-**Workaround:** Stress tests removed from test suite. Core functionality (160 tests) works correctly.
+**Root cause:** Unclear. The issue is in the interaction between:
+- Crucible's `runAllSuites` function
+- Tests containing for-loops with FFI calls
+- Possibly related to how Crucible manages test execution/timeouts
 
-**To investigate:**
-- Debug `native/src/conduit_ffi.c` for lock contention in rapid operations
-- Check if mutex isn't properly released between rapid send/recv calls
-- Investigate Lean FFI calling conventions for tight-loop scenarios
-- Consider if Lean's for-loop mechanism interacts poorly with FFI calls
+**Workaround:** Stress tests removed from test suite. Core functionality (160 tests) works correctly. Stress testing can be done via standalone executables.
+
+**To investigate (in Crucible):**
+- How `runAllSuites` manages test task spawning
+- Whether test timeout mechanism interferes with FFI loops
+- If `#generate_tests` macro creates problematic code patterns

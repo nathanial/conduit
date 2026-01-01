@@ -90,9 +90,9 @@ test "rapid close on buffered channel" := do
     let arr ← ch.drain
     arr ≡ #[1, 2]
 
--- Note: Stress tests removed - tight loops with channel operations hang
--- Root cause: Not blocking waits (we use interruptible polling now)
--- but something in Lean ↔ FFI interaction with rapid same-channel ops
+-- Note: Stress tests cause hangs when run through Crucible test framework.
+-- The same code works fine as a standalone program. The issue appears to be
+-- in the interaction between Crucible's runAllSuites and for-loops with FFI.
 
 testSuite "tryRecv/trySend Edge Cases"
 
