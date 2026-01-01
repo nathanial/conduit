@@ -2,7 +2,7 @@
 
 ## Current Coverage
 
-**176 tests across 11 suites**
+**186 tests across 11 suites**
 
 ### Test Suites
 
@@ -14,7 +14,7 @@
 | TypeTests | 30 | SendResult, TryResult operations |
 | TrySendTests | 12 | Non-blocking send, len |
 | SelectAdvancedTests | 31 | Select with send cases, timeout, wait, withDefault |
-| ConcurrencyTests | 10 | Concurrent operations |
+| ConcurrencyTests | 20 | Concurrent operations, race conditions |
 | TimeoutTests | 11 | sendTimeout, recvTimeout |
 | BroadcastTests | 15 | Broadcast, Hub, subscriberCount |
 | EdgeCaseTests | 17 | Edge cases, stress tests |
@@ -52,12 +52,15 @@
 
 ### Race Condition Tests Needed
 
-- [ ] Close while send is blocked on full buffer
-- [ ] Close while recv is blocked on empty channel
-- [ ] Concurrent close from multiple tasks
-- [ ] Select waiting when channel closes
-- [ ] Multiple concurrent drains on same channel
-- [ ] Close during active forEach iteration
+- [x] Close while send is blocked on full buffer *(added)*
+- [x] Close while recv is blocked on empty channel *(added)*
+- [x] Concurrent close from multiple tasks *(added)*
+- [x] Select waiting when channel closes *(added)*
+- [x] Multiple concurrent drains on same channel *(added)*
+- [x] Close during active forEach iteration *(added)*
+- [x] Concurrent send and close race *(added)*
+- [x] Concurrent recv and close race *(added)*
+- [x] Rapid send-recv-close cycle *(added)*
 
 ### Resource Tests Needed
 
