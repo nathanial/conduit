@@ -89,3 +89,21 @@ native/
 - `send` on closed channel returns `false` immediately
 - `recv` on closed channel drains remaining values, then returns `none`
 - Closing is idempotent
+
+### Task Priority for Blocking Operations
+
+When spawning tasks that block on channel operations (`recv`, `send`, `for v in ch do`), use `IO.asTask (prio := .dedicated)` to create real OS threads:
+
+```lean
+-- CORRECT: dedicated threads can block independently
+let task ← IO.asTask (prio := .dedicated) do
+  for v in ch do
+    process v
+
+-- WRONG: default priority uses thread pool, can deadlock
+let task ← IO.asTask do
+  for v in ch do  -- may hang if pool threads are exhausted
+    process v
+```
+
+The default thread pool has limited workers. If all workers block on channel operations, no progress can be made. `.dedicated` creates a new OS thread that can block without affecting the pool.
