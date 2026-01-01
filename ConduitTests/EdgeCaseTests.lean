@@ -90,9 +90,33 @@ test "rapid close on buffered channel" := do
     let arr ← ch.drain
     arr ≡ #[1, 2]
 
--- Note: Stress tests cause hangs when run through Crucible test framework.
--- The same code works fine as a standalone program. The issue appears to be
--- in the interaction between Crucible's runAllSuites and for-loops with FFI.
+testSuite "Stress Tests"
+
+test "100 sends to buffered channel" := do
+  let ch ← Channel.newBuffered Nat 100
+  for i in [:100] do
+    let _ ← ch.send i
+  ch.close  -- Must close before drain since drain waits for channel to close
+  let arr ← ch.drain
+  arr.size ≡ 100
+
+test "many small sends and receives" := do
+  let ch ← Channel.newBuffered Nat 10
+  let mut sum := 0
+  for i in [:50] do
+    let _ ← ch.send i
+    match ← ch.recv with
+    | some v => sum := sum + v
+    | none => throw (IO.userError "unexpected closed")
+  sum ≡ 1225
+
+test "close is idempotent" := do
+  let ch ← Channel.newBuffered Nat 5
+  ch.close
+  ch.close
+  ch.close
+  let closed ← ch.isClosed
+  closed ≡ true
 
 testSuite "tryRecv/trySend Edge Cases"
 
