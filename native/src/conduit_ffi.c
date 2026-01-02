@@ -290,6 +290,16 @@ LEAN_EXPORT lean_obj_res conduit_channel_send(
 
     if (ch->capacity == 0) {
         /* Unbuffered channel: wait for receiver */
+        while (ch->pending_ready && !ch->closed) {
+            cond_wait_interruptible(&ch->not_full, &ch->mutex);
+        }
+
+        if (ch->closed) {
+            pthread_mutex_unlock(&ch->mutex);
+            lean_dec(value);
+            return lean_io_result_mk_ok(lean_box(0)); /* false */
+        }
+
         ch->pending_value = value;
         ch->pending_ready = true;
         ch->pending_taken = false;
@@ -599,6 +609,21 @@ LEAN_EXPORT lean_obj_res conduit_channel_send_timeout(
 
     if (ch->capacity == 0) {
         /* Unbuffered channel: wait for receiver with timeout */
+        while (ch->pending_ready && !ch->closed) {
+            int rc = pthread_cond_timedwait(&ch->not_full, &ch->mutex, &deadline);
+            if (rc == ETIMEDOUT) {
+                pthread_mutex_unlock(&ch->mutex);
+                lean_dec(value);
+                return lean_io_result_mk_ok(lean_box(1)); /* timeout */
+            }
+        }
+
+        if (ch->closed) {
+            pthread_mutex_unlock(&ch->mutex);
+            lean_dec(value);
+            return lean_io_result_mk_ok(lean_box(2)); /* closed */
+        }
+
         ch->pending_value = value;
         ch->pending_ready = true;
         ch->pending_taken = false;

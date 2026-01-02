@@ -25,6 +25,32 @@ test "concurrent send and recv on unbuffered channel complete" := do
   let _ ← IO.wait sender
   v ≡? 42
 
+test "concurrent unbuffered sends deliver all values" := do
+  let ch ← Channel.new Nat
+  let sender1 ← IO.asTask (prio := .dedicated) do
+    let _ ← ch.send 1
+  let sender2 ← IO.asTask (prio := .dedicated) do
+    let _ ← ch.send 2
+  -- Give both senders time to block on the unbuffered channel
+  IO.sleep 10
+  let r1 ← ch.recvTimeout 500
+  let r2 ← ch.recvTimeout 500
+  let mut received : Array Nat := #[]
+  for r in [r1, r2] do
+    match r with
+    | some (some v) => received := received.push v
+    | _ => pure ()
+  if received.size != 2 then
+    ch.close
+    let _ ← IO.wait sender1 >>= IO.ofExcept
+    let _ ← IO.wait sender2 >>= IO.ofExcept
+    throw (IO.userError s!"Expected 2 values, got {received.size}")
+  let _ ← IO.wait sender1 >>= IO.ofExcept
+  let _ ← IO.wait sender2 >>= IO.ofExcept
+  ch.close
+  shouldContain received.toList 1
+  shouldContain received.toList 2
+
 test "multiple sequential sends with concurrent receiver" := do
   -- Test unbuffered channel with dedicated threads
   let ch ← Channel.new Nat
