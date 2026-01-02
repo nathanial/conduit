@@ -38,28 +38,30 @@ def create (source : Channel α) (numSubscribers : Nat)
 
 /-- A broadcast hub allowing dynamic subscriber addition.
     Subscribers added after values are sent will only receive future values. -/
+structure HubState (α : Type) where
+  subscribers : Array (Channel α)
+  closed : Bool
+
 structure Hub (α : Type) where
   private mk ::
-  private subscribers : IO.Ref (Array (Channel α))
+  private state : IO.Ref (HubState α)
   private bufferSize : Nat
-  private closed : IO.Ref Bool
 
 /-- Create a broadcast hub from a source channel.
     Subscribers can be added dynamically with `Hub.subscribe`.
     New subscribers will receive all future values from the point of subscription. -/
 def hub (source : Channel α) (bufferSize : Nat := 16) : IO (Hub α) := do
-  let subs ← IO.mkRef (α := Array (Channel α)) #[]
-  let closed ← IO.mkRef false
-  let h : Hub α := ⟨subs, bufferSize, closed⟩
+  let state ← IO.mkRef { subscribers := (#[] : Array (Channel α)), closed := false }
+  let h : Hub α := ⟨state, bufferSize⟩
   -- Spawn distributor task
   let _ ← IO.asTask (prio := .dedicated) do
     Channel.forEach source fun v => do
-      let currentSubs ← subs.get
+      let currentSubs := (← state.get).subscribers
       for sub in currentSubs do
         let _ ← sub.send v
     -- Mark closed and close all current subscribers
-    closed.set true
-    let currentSubs ← subs.get
+    let currentSubs ← state.modifyGet fun st =>
+      (st.subscribers, { st with closed := true })
     for sub in currentSubs do
       sub.close
   pure h
@@ -67,21 +69,25 @@ def hub (source : Channel α) (bufferSize : Nat := 16) : IO (Hub α) := do
 /-- Subscribe to the hub, receiving all future values.
     Returns none if the hub is already closed. -/
 def Hub.subscribe (h : Hub α) : IO (Option (Channel α)) := do
-  let isClosed ← h.closed.get
-  if isClosed then
-    return none
   let ch ← Channel.newBuffered α h.bufferSize
-  h.subscribers.modify (·.push ch)
-  return some ch
+  let added ← h.state.modifyGet fun st =>
+    if st.closed then
+      (false, st)
+    else
+      (true, { st with subscribers := st.subscribers.push ch })
+  if added then
+    return some ch
+  ch.close
+  return none
 
 /-- Check if the hub is closed. -/
 def Hub.isClosed (h : Hub α) : IO Bool :=
-  h.closed.get
+  return (← h.state.get).closed
 
 /-- Get the current number of subscribers. -/
 def Hub.subscriberCount (h : Hub α) : IO Nat := do
-  let subs ← h.subscribers.get
-  return subs.size
+  let st ← h.state.get
+  return st.subscribers.size
 
 end Broadcast
 end Conduit

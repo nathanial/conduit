@@ -6,7 +6,9 @@
   - Status: fixed by waiting for `pending_ready` to clear before installing a new pending send (and respecting close/timeout).
   - Regression: `concurrent unbuffered sends deliver all values` in `ConduitTests/ConcurrencyTests.lean`.
 - High: `Broadcast.Hub.subscribe` has a race with hub shutdown: if `closed` flips between the `get` and `modify`, the new subscriber can be added after the broadcaster already closed existing subscribers, leaving it open forever and never receiving values. `util/conduit/Conduit/Broadcast.lean:61` `util/conduit/Conduit/Broadcast.lean:69`
+  - Status: fixed by storing `closed` and subscribers in a single ref and updating them atomically.
 - Medium: `conduit_select_wait` can return `none` even when `timeout_ms == 0` if it wakes and another thread consumes readiness before the final poll. That violates the “wait until ready” contract unless you explicitly allow spurious `none`. `util/conduit/native/src/conduit_ffi.c:1090` `util/conduit/native/src/conduit_ffi.c:1110`
+  - Status: fixed by retrying the wait when timeout is 0 unless all cases are send-on-closed.
 
 ## Missing Tests
 

@@ -1007,10 +1007,13 @@ LEAN_EXPORT lean_obj_res conduit_select_wait(
     }
 
     size_t timeout_ms = lean_usize_of_nat(timeout_obj);
+    lean_object *result;
+    lean_object *inner;
 
+retry:
     /* 1. First poll without waiting (fast path) */
-    lean_object *result = conduit_select_poll(cases_obj, world);
-    lean_object *inner = lean_ctor_get(result, 0);
+    result = conduit_select_poll(cases_obj, world);
+    inner = lean_ctor_get(result, 0);
     if (!lean_is_scalar(inner)) {
         return result; /* Already ready */
     }
@@ -1138,6 +1141,38 @@ LEAN_EXPORT lean_obj_res conduit_select_wait(
     pthread_cond_destroy(&wait_cond);
     pthread_mutex_destroy(&wait_mutex);
     free(channels);
+
+    if (timeout_ms == 0) {
+        lean_object *final_inner = lean_ctor_get(result, 0);
+        if (lean_is_scalar(final_inner)) {
+            bool all_send_closed = true;
+            for (size_t i = 0; i < n; i++) {
+                lean_object *pair = lean_array_get_core(cases_obj, i);
+                lean_object *ch_obj = lean_ctor_get(pair, 0);
+                bool is_send = lean_unbox(lean_ctor_get(pair, 1)) != 0;
+
+                if (!is_send) {
+                    all_send_closed = false;
+                    break;
+                }
+
+                conduit_channel_t *ch = conduit_channel_unbox(ch_obj);
+                pthread_mutex_lock(&ch->mutex);
+                bool closed = ch->closed;
+                pthread_mutex_unlock(&ch->mutex);
+
+                if (!closed) {
+                    all_send_closed = false;
+                    break;
+                }
+            }
+
+            if (!all_send_closed) {
+                lean_dec(result);
+                goto retry;
+            }
+        }
+    }
 
     return result;
 }
