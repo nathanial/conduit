@@ -8,7 +8,7 @@ package conduit where
     ⟨`relaxedAutoImplicit, false⟩
   ]
 
-require crucible from git "https://github.com/nathanial/crucible" @ "v0.0.3"
+require crucible from git "https://github.com/nathanial/crucible" @ "v0.0.7"
 
 @[default_target]
 lean_lib Conduit where
