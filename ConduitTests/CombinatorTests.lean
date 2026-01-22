@@ -268,6 +268,6 @@ test "pipeFilter keeps all when predicate always true" := do
   let result ← filtered.drain
   result ≡ #[1, 2, 3]
 
-#generate_tests
+
 
 end ConduitTests.CombinatorTests

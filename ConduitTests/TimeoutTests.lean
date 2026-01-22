@@ -124,6 +124,6 @@ test "recvTimeout wakes when sender arrives" := do
   if elapsed - start > 300 then
     throw (IO.userError s!"Too slow: {elapsed - start}ms")
 
-#generate_tests
+
 
 end ConduitTests.TimeoutTests

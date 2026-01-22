@@ -114,6 +114,6 @@ test "len returns 0 for unbuffered channel" := do
   let len ← ch.len
   len ≡ 0
 
-#generate_tests
+
 
 end ConduitTests.TrySendTests

@@ -196,6 +196,6 @@ test "broadcast hub does not leak subscribers" := do
   -- source channel + 3 subscriber channels
   allocs ≡ 4
 
-#generate_tests
+
 
 end ConduitTests.ResourceTests

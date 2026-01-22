@@ -303,6 +303,6 @@ test "selectTimeout respects timeout" := do
   if elapsed - start >= 300 then
     throw (IO.userError s!"Timeout too slow: {elapsed - start}ms")
 
-#generate_tests
+
 
 end ConduitTests.SelectAdvancedTests

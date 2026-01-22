@@ -298,6 +298,6 @@ test "many small channels with data" := do
     total := total + arr.size
   total ≡ 1000
 
-#generate_tests
+
 
 end ConduitTests.StressTests

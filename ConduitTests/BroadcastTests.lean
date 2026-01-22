@@ -211,6 +211,6 @@ test "subscriberCount after source close" := do
   let countAfter ← h.subscriberCount
   countAfter ≡ 2
 
-#generate_tests
+
 
 end ConduitTests.BroadcastTests

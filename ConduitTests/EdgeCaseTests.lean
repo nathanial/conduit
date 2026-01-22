@@ -168,6 +168,6 @@ test "len reflects current buffer state" := do
   let len1' ← ch.len
   len1' ≡ 1
 
-#generate_tests
+
 
 end ConduitTests.EdgeCaseTests

@@ -173,6 +173,6 @@ test "Monad do-notation short-circuits on empty" := do
     pure a
   result.isEmpty ≡ true
 
-#generate_tests
+
 
 end ConduitTests.TypeTests

@@ -100,6 +100,6 @@ test "tryRecv on buffered with data returns value" := do
   | .ok v => v ≡ 42
   | _ => throw (IO.userError "expected .ok 42")
 
-#generate_tests
+
 
 end ConduitTests.ChannelTests

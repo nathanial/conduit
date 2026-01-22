@@ -49,6 +49,6 @@ test "poll detects closed channel as ready for recv" := do
     recvCase ch
   result ≡? 0
 
-#generate_tests
+
 
 end ConduitTests.SelectTests

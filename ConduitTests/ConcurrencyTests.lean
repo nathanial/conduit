@@ -411,6 +411,6 @@ test "rapid send-recv-close cycle" := do
   -- If we get here without hanging or crashing, test passes
   pure ()
 
-#generate_tests
+
 
 end ConduitTests.ConcurrencyTests
